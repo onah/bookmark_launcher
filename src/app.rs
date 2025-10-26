@@ -10,6 +10,7 @@ pub struct Bookmark {
 pub struct App {
     pub query: String,
     pub bookmarks: Vec<Bookmark>,
+    pub initial_focus: bool,
 }
 
 impl App {
@@ -17,6 +18,7 @@ impl App {
         Self {
             query: String::new(),
             bookmarks,
+            initial_focus: true,
         }
     }
 }
