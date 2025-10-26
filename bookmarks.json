@@ -1,0 +1,17 @@
+[
+    {
+        "title": "Google",
+        "url": "https://www.google.com",
+        "access_count": 0
+    },
+    {
+        "title": "Rust",
+        "url": "https://www.rust-lang.org",
+        "access_count": 0
+    },
+    {
+        "title": "GitHub",
+        "url": "https://github.com",
+        "access_count": 0
+    }
+]
