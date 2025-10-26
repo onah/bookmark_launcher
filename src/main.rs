@@ -1,8 +1,7 @@
 mod app;
 mod ui;
 
-use app::{App, Bookmark};
-use eframe::egui;
+use app::Bookmark;
 use std::fs;
 
 fn main() -> eframe::Result<()> {
@@ -12,18 +11,5 @@ fn main() -> eframe::Result<()> {
     )
     .unwrap_or_default();
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_decorations(false) // タイトルバーなし
-            .with_transparent(true) // 背景透過（Windowsでフローティング感）
-            .with_inner_size([500.0, 300.0])
-            .with_always_on_top(), // 常に前面
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "Bookmark Launcher",
-        options,
-        Box::new(|_| Ok(Box::new(App::new(bookmarks)))),
-    )
+    ui::run_app(bookmarks)
 }
