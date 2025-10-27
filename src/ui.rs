@@ -7,6 +7,7 @@ pub fn run_app(bookmarks: Vec<Bookmark>) -> eframe::Result<()> {
             .with_decorations(false) // タイトルバーなし
             .with_transparent(true) // 背景透過（Windowsでフローティング感）
             .with_inner_size([500.0, 300.0])
+            .with_position(egui::Pos2::new(400.0, 100.0)) // 中央少し上に配置
             .with_always_on_top(), // 常に前面
         ..Default::default()
     };
@@ -51,6 +52,20 @@ impl eframe::App for App {
                         // アクセス数を更新
                         // ※小規模サンプルでは保存は省略可能
                     }
+                }
+
+                self.filtered_bookmarks = self
+                    .bookmarks
+                    .iter()
+                    .filter(|bm| self.query.is_empty() || bm.title.contains(&self.query))
+                    .cloned()
+                    .collect();
+
+                if response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Some(bm) = self.filtered_bookmarks.first() {
+                        let _ = open::that(&bm.url);
+                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
         });
