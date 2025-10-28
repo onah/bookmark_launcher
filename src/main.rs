@@ -5,7 +5,6 @@ use app::Bookmark;
 use std::fs;
 
 fn main() -> eframe::Result<()> {
-    // bookmarks.json 読み込み
     let bookmarks = serde_json::from_str::<Vec<Bookmark>>(
         &fs::read_to_string("bookmarks.json").unwrap_or("[]".into()),
     )
