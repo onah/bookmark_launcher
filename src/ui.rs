@@ -42,12 +42,19 @@ impl eframe::App for App {
                     self.set_initial_focus(false);
                 }
 
+                let mut clicked_url: Option<String> = None;
+
                 for bm in self.bookmarks() {
                     if (self.query().is_empty() || bm.title.contains(self.query()))
                         && ui.button(format!("{} ({})", bm.title, bm.url)).clicked()
                     {
-                        let _ = open::that(&bm.url);
+                        clicked_url = Some(bm.url.clone());
                     }
+                }
+
+                if let Some(url) = clicked_url {
+                    let _ = self.increment_access_count(&url);
+                    let _ = open::that(&url);
                 }
 
                 self.set_filtered_bookmarks(
@@ -58,11 +65,18 @@ impl eframe::App for App {
                         .collect(),
                 );
 
+                let mut enter_url: Option<String> = None;
+
                 if response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
                     if let Some(bm) = self.filtered_bookmarks().first() {
-                        let _ = open::that(&bm.url);
+                        enter_url = Some(bm.url.clone());
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+
+                if let Some(url) = enter_url {
+                    let _ = self.increment_access_count(&url);
+                    let _ = open::that(&url);
                 }
             });
         });

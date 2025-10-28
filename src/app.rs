@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Bookmark {
@@ -50,5 +51,19 @@ impl App {
 
     pub fn set_initial_focus(&mut self, focus: bool) {
         self.initial_focus = focus;
+    }
+
+    pub fn increment_access_count(&mut self, url: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(bookmark) = self.bookmarks.iter_mut().find(|b| b.url == url) {
+            bookmark.access_count += 1;
+            self.save_bookmarks()?;
+        }
+        Ok(())
+    }
+
+    pub fn save_bookmarks(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(&self.bookmarks)?;
+        fs::write("bookmarks.json", json)?;
+        Ok(())
     }
 }
