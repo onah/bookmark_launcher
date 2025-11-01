@@ -1,3 +1,5 @@
+use reqwest;
+use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -65,5 +67,64 @@ impl App {
         let json = serde_json::to_string_pretty(&self.bookmarks)?;
         fs::write("bookmarks.json", json)?;
         Ok(())
+    }
+
+    pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
+        // URLが既に存在するかチェック
+        if self.bookmarks.iter().any(|b| b.url == url) {
+            return Ok(());
+        }
+
+        // 新しいブックマークを追加
+        let title = self.extract_title_from_url(&url);
+        let bookmark = Bookmark {
+            title,
+            url,
+            access_count: 0,
+        };
+
+        self.bookmarks.push(bookmark);
+        self.save_bookmarks()?;
+        Ok(())
+    }
+
+    fn extract_title_from_url(&self, url: &str) -> String {
+        // Webページからタイトルを取得しようとする
+        match self.fetch_page_title(url) {
+            Ok(title) if !title.is_empty() => title,
+            _ => {
+                // 取得できない場合はドメイン名を使用
+                if let Some(start) = url.find("://") {
+                    let domain_part = &url[start + 3..];
+                    if let Some(end) = domain_part.find('/') {
+                        domain_part[..end].to_string()
+                    } else if let Some(end) = domain_part.find('?') {
+                        domain_part[..end].to_string()
+                    } else {
+                        domain_part.to_string()
+                    }
+                } else {
+                    url.to_string()
+                }
+            }
+        }
+    }
+
+    fn fetch_page_title(&self, url: &str) -> Result<String, Box<dyn std::error::Error>> {
+        // HTTPリクエストでHTMLを取得
+        let response = reqwest::blocking::get(url)?;
+        let html = response.text()?;
+
+        // HTMLをパース
+        let document = Html::parse_document(&html);
+        let selector = Selector::parse("title")?;
+
+        // titleタグの内容を取得
+        if let Some(title_element) = document.select(&selector).next() {
+            let title = title_element.text().collect::<String>().trim().to_string();
+            Ok(title)
+        } else {
+            Ok(String::new())
+        }
     }
 }

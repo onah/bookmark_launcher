@@ -1,5 +1,6 @@
 use crate::app::{App, Bookmark};
 use eframe::egui;
+use egui::FontFamily;
 
 pub fn run_app(bookmarks: Vec<Bookmark>) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -15,8 +16,29 @@ pub fn run_app(bookmarks: Vec<Bookmark>) -> eframe::Result<()> {
     eframe::run_native(
         "Bookmark Launcher",
         options,
-        Box::new(|_| Ok(Box::new(App::new(bookmarks)))),
+        Box::new(|cc| {
+            setup_custom_fonts(&cc.egui_ctx);
+            Ok(Box::new(App::new(bookmarks)))
+        }),
     )
+}
+
+fn setup_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "note_sans_jp".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/NotoSansJP-VariableFont_wght.ttf"))
+            .into(),
+    );
+
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "note_sans_jp".to_owned());
+
+    ctx.set_fonts(fonts);
 }
 
 impl eframe::App for App {
@@ -66,16 +88,33 @@ impl eframe::App for App {
                 );
 
                 let mut enter_url: Option<String> = None;
+                let mut should_add_bookmark = false;
 
                 if response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if let Some(bm) = self.filtered_bookmarks().first() {
-                        enter_url = Some(bm.url.clone());
+                    let query = self.query().trim();
+                    if !query.is_empty() {
+                        // URLかどうかを判定（http/httpsで始まるか、.を含む）
+                        if query.starts_with("http://")
+                            || query.starts_with("https://")
+                            || query.contains('.')
+                        {
+                            // URLの場合、ブックマークとして追加
+                            should_add_bookmark = true;
+                            enter_url = Some(query.to_string());
+                        } else if let Some(bm) = self.filtered_bookmarks().first() {
+                            // 既存のブックマークを開く
+                            enter_url = Some(bm.url.clone());
+                        }
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
 
                 if let Some(url) = enter_url {
-                    let _ = self.increment_access_count(&url);
+                    if should_add_bookmark {
+                        let _ = self.add_bookmark(url.clone());
+                    } else {
+                        let _ = self.increment_access_count(&url);
+                    }
                     let _ = open::that(&url);
                 }
             });
