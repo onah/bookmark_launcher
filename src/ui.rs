@@ -95,16 +95,13 @@ impl eframe::App for App {
                 if response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let query = self.query().trim();
                     if !query.is_empty() {
-                        // URLかどうかを判定（http/httpsで始まるか、.を含む）
                         if query.starts_with("http://")
                             || query.starts_with("https://")
                             || query.contains('.')
                         {
-                            // URLの場合、ブックマークとして追加
                             should_add_bookmark = true;
                             enter_url = Some(query.to_string());
                         } else if let Some(bm) = self.filtered_bookmarks().first() {
-                            // 既存のブックマークを開く
                             enter_url = Some(bm.url.clone());
                         }
                     }
