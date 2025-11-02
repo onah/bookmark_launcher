@@ -1,3 +1,4 @@
+use fuzzy_matcher::skim::SkimMatcherV2;
 use reqwest;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ pub struct App {
     bookmarks: Vec<Bookmark>,
     filtered_bookmarks: Vec<Bookmark>,
     initial_focus: bool,
+    matcher: fuzzy_matcher::skim::SkimMatcherV2,
 }
 
 impl App {
@@ -24,6 +26,7 @@ impl App {
             bookmarks,
             filtered_bookmarks: Vec::new(),
             initial_focus: true,
+            matcher: SkimMatcherV2::default(),
         }
     }
 
@@ -53,6 +56,27 @@ impl App {
 
     pub fn set_initial_focus(&mut self, focus: bool) {
         self.initial_focus = focus;
+    }
+
+    pub fn fuzzy_search(&self, query: &str) -> Vec<(usize, i64)> {
+        if query.is_empty() {
+            return (0..self.bookmarks.len()).map(|i| (i, 0)).collect();
+        }
+
+        let mut results: Vec<(usize, i64)> = self
+            .bookmarks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, bookmark)| {
+                self.matcher
+                    .fuzzy(&bookmark.title, query, false)
+                    .map(|(score, _)| (index, score))
+            })
+            .collect();
+
+        // スコアで降順ソート
+        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results
     }
 
     pub fn increment_access_count(&mut self, url: &str) -> Result<(), Box<dyn std::error::Error>> {

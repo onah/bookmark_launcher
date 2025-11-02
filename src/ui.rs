@@ -66,11 +66,14 @@ impl eframe::App for App {
 
                 let mut clicked_url: Option<String> = None;
 
-                for bm in self.bookmarks() {
-                    if (self.query().is_empty() || bm.title.contains(self.query()))
-                        && ui.button(format!("{} ({})", bm.title, bm.url)).clicked()
-                    {
-                        clicked_url = Some(bm.url.clone());
+                // Fuzzy search results
+                let search_results = self.fuzzy_search(self.query());
+
+                for (index, _) in &search_results {
+                    if let Some(bm) = self.bookmarks().get(*index) {
+                        if ui.button(format!("{} ({})", bm.title, bm.url)).clicked() {
+                            clicked_url = Some(bm.url.clone());
+                        }
                     }
                 }
 
@@ -80,10 +83,9 @@ impl eframe::App for App {
                 }
 
                 self.set_filtered_bookmarks(
-                    self.bookmarks()
+                    search_results
                         .iter()
-                        .filter(|bm| self.query().is_empty() || bm.title.contains(self.query()))
-                        .cloned()
+                        .filter_map(|(index, _)| self.bookmarks().get(*index).cloned())
                         .collect(),
                 );
 
