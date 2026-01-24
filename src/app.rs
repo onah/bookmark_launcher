@@ -1,14 +1,27 @@
+use directories::ProjectDirs;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use reqwest;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Bookmark {
     pub title: String,
     pub url: String,
     pub access_count: u32,
+}
+
+pub fn data_file_path() -> PathBuf {
+    if let Some(proj) = ProjectDirs::from("com", "onah", "bookmark_launcher") {
+        let dir = proj.data_dir();
+        // ignore error if directory already exists or cannot be created
+        let _ = std::fs::create_dir_all(dir);
+        dir.join("bookmarks.json")
+    } else {
+        PathBuf::from("bookmarks.json")
+    }
 }
 
 pub struct App {
@@ -89,7 +102,8 @@ impl App {
 
     pub fn save_bookmarks(&self) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self.bookmarks)?;
-        fs::write("bookmarks.json", json)?;
+        let path = data_file_path();
+        fs::write(path, json)?;
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 mod app;
 mod ui;
 
@@ -5,10 +6,11 @@ use app::Bookmark;
 use std::fs;
 
 fn main() -> eframe::Result<()> {
-    let bookmarks = serde_json::from_str::<Vec<Bookmark>>(
-        &fs::read_to_string("bookmarks.json").unwrap_or("[]".into()),
-    )
-    .unwrap_or_default();
+    let path = app::data_file_path();
+    let bookmarks = match fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str::<Vec<Bookmark>>(&s).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
 
     ui::run_app(bookmarks)
 }
