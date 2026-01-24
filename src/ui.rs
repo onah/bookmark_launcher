@@ -48,6 +48,8 @@ impl eframe::App for App {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Keep heading and input centered
+            let mut response: Option<egui::Response> = None;
             ui.vertical_centered(|ui| {
                 ui.heading("Bookmark Launcher");
                 ui.add_space(10.0);
@@ -57,23 +59,36 @@ impl eframe::App for App {
                     egui::FontId::new(20.0, egui::FontFamily::Proportional),
                 );
 
-                let response = ui.text_edit_singleline(self.query_mut());
+                response = Some(ui.text_edit_singleline(self.query_mut()));
 
                 if self.initial_focus() {
-                    response.request_focus();
+                    if let Some(r) = response.as_mut() {
+                        r.request_focus();
+                    }
                     self.set_initial_focus(false);
                 }
+            });
 
+            ui.add_space(6.0);
+
+            // Left-aligned list of bookmark results
+            ui.vertical(|ui| {
                 let mut clicked_url: Option<String> = None;
 
-                // Fuzzy search results
+                // Fuzzy search results (ordered by relevance)
                 let search_results = self.fuzzy_search(self.query());
 
                 for (index, _) in &search_results {
                     if let Some(bm) = self.bookmarks().get(*index) {
-                        if ui.button(format!("{} ({})", bm.title, bm.url)).clicked() {
-                            clicked_url = Some(bm.url.clone());
-                        }
+                        // Buttons inside a horizontal block to ensure left alignment
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(egui::Button::new(format!("{} ({})", bm.title, bm.url)))
+                                .clicked()
+                            {
+                                clicked_url = Some(bm.url.clone());
+                            }
+                        });
                     }
                 }
 
@@ -92,7 +107,9 @@ impl eframe::App for App {
                 let mut enter_url: Option<String> = None;
                 let mut should_add_bookmark = false;
 
-                if response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if response.as_ref().map_or(false, |r| r.lost_focus())
+                    && ctx.input(|i| i.key_pressed(egui::Key::Enter))
+                {
                     let query = self.query().trim();
                     if !query.is_empty() {
                         if query.starts_with("http://")
