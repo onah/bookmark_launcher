@@ -7,10 +7,53 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Bookmark {
-    pub title: String,
-    pub url: String,
-    pub access_count: u32,
+#[serde(untagged)]
+pub enum Entry {
+    Bookmark {
+        title: String,
+        url: String,
+        access_count: u32,
+    },
+    App {
+        title: String,
+        command: String,
+        args: Vec<String>,
+        access_count: u32,
+    },
+}
+
+impl Entry {
+    pub fn title(&self) -> &str {
+        match self {
+            Entry::Bookmark { title, .. } => title,
+            Entry::App { title, .. } => title,
+        }
+    }
+
+    pub fn display(&self) -> String {
+        match self {
+            Entry::Bookmark { title, url, .. } => format!("{} ({})", title, url),
+            Entry::App {
+                title,
+                command,
+                args,
+                ..
+            } => {
+                if args.is_empty() {
+                    format!("{} ({})", title, command)
+                } else {
+                    format!("{} ({} {})", title, command, args.join(" "))
+                }
+            }
+        }
+    }
+
+    pub fn access_count_mut(&mut self) -> &mut u32 {
+        match self {
+            Entry::Bookmark { access_count, .. } => access_count,
+            Entry::App { access_count, .. } => access_count,
+        }
+    }
 }
 
 pub fn data_file_path() -> PathBuf {
@@ -26,14 +69,14 @@ pub fn data_file_path() -> PathBuf {
 
 pub struct App {
     query: String,
-    bookmarks: Vec<Bookmark>,
-    filtered_bookmarks: Vec<Bookmark>,
+    bookmarks: Vec<Entry>,
+    filtered_bookmarks: Vec<Entry>,
     initial_focus: bool,
     matcher: fuzzy_matcher::skim::SkimMatcherV2,
 }
 
 impl App {
-    pub fn new(bookmarks: Vec<Bookmark>) -> Self {
+    pub fn new(bookmarks: Vec<Entry>) -> Self {
         Self {
             query: String::new(),
             bookmarks,
@@ -51,15 +94,15 @@ impl App {
         &mut self.query
     }
 
-    pub fn bookmarks(&self) -> &[Bookmark] {
+    pub fn bookmarks(&self) -> &[Entry] {
         &self.bookmarks
     }
 
-    pub fn filtered_bookmarks(&self) -> &[Bookmark] {
+    pub fn filtered_bookmarks(&self) -> &[Entry] {
         &self.filtered_bookmarks
     }
 
-    pub fn set_filtered_bookmarks(&mut self, bookmarks: Vec<Bookmark>) {
+    pub fn set_filtered_bookmarks(&mut self, bookmarks: Vec<Entry>) {
         self.filtered_bookmarks = bookmarks;
     }
 
@@ -80,9 +123,9 @@ impl App {
             .bookmarks
             .iter()
             .enumerate()
-            .filter_map(|(index, bookmark)| {
+            .filter_map(|(index, entry)| {
                 self.matcher
-                    .fuzzy(&bookmark.title, query, false)
+                    .fuzzy(entry.title(), query, false)
                     .map(|(score, _)| (index, score))
             })
             .collect();
@@ -92,9 +135,43 @@ impl App {
         results
     }
 
-    pub fn increment_access_count(&mut self, url: &str) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(bookmark) = self.bookmarks.iter_mut().find(|b| b.url == url) {
-            bookmark.access_count += 1;
+    pub fn increment_access_count_by_index(
+        &mut self,
+        index: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(entry) = self.bookmarks.get_mut(index) {
+            *entry.access_count_mut() += 1;
+            self.save_bookmarks()?;
+        }
+        Ok(())
+    }
+
+    pub fn increment_access_count_by_entry(
+        &mut self,
+        target: &Entry,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // try to find by identifying field
+        let maybe_idx =
+            self.bookmarks
+                .iter_mut()
+                .enumerate()
+                .find_map(|(i, e)| match (e, target) {
+                    (Entry::Bookmark { url: u1, .. }, Entry::Bookmark { url: u2, .. })
+                        if u1 == u2 =>
+                    {
+                        Some(i)
+                    }
+                    (Entry::App { command: c1, .. }, Entry::App { command: c2, .. })
+                        if c1 == c2 =>
+                    {
+                        Some(i)
+                    }
+                    _ => None,
+                });
+
+        if let Some(idx) = maybe_idx {
+            let entry = &mut self.bookmarks[idx];
+            *entry.access_count_mut() += 1;
             self.save_bookmarks()?;
         }
         Ok(())
@@ -109,19 +186,22 @@ impl App {
 
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
         // URLが既に存在するかチェック
-        if self.bookmarks.iter().any(|b| b.url == url) {
+        if self.bookmarks.iter().any(|b| match b {
+            Entry::Bookmark { url: u, .. } => u == &url,
+            _ => false,
+        }) {
             return Ok(());
         }
 
         // 新しいブックマークを追加
         let title = self.extract_title_from_url(&url);
-        let bookmark = Bookmark {
+        let entry = Entry::Bookmark {
             title,
             url,
             access_count: 0,
         };
 
-        self.bookmarks.push(bookmark);
+        self.bookmarks.push(entry);
         self.save_bookmarks()?;
         Ok(())
     }

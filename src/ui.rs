@@ -1,8 +1,8 @@
-use crate::app::{App, Bookmark};
+use crate::app::{App, Entry};
 use eframe::egui;
 use egui::FontFamily;
 
-pub fn run_app(bookmarks: Vec<Bookmark>) -> eframe::Result<()> {
+pub fn run_app(bookmarks: Vec<Entry>) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_decorations(false)
@@ -73,28 +73,37 @@ impl eframe::App for App {
 
             // Left-aligned list of bookmark results
             ui.vertical(|ui| {
-                let mut clicked_url: Option<String> = None;
+                let mut clicked_index: Option<usize> = None;
 
                 // Fuzzy search results (ordered by relevance)
                 let search_results = self.fuzzy_search(self.query());
 
                 for (index, _) in &search_results {
-                    if let Some(bm) = self.bookmarks().get(*index) {
-                        // Buttons inside a horizontal block to ensure left alignment
+                    if let Some(entry) = self.bookmarks().get(*index) {
                         ui.horizontal(|ui| {
-                            if ui
-                                .add(egui::Button::new(format!("{} ({})", bm.title, bm.url)))
-                                .clicked()
-                            {
-                                clicked_url = Some(bm.url.clone());
+                            if ui.add(egui::Button::new(entry.display())).clicked() {
+                                clicked_index = Some(*index);
                             }
                         });
                     }
                 }
 
-                if let Some(url) = clicked_url {
-                    let _ = self.increment_access_count(&url);
-                    let _ = open::that(&url);
+                if let Some(idx) = clicked_index {
+                    let _ = self.increment_access_count_by_index(idx);
+                    if let Some(entry) = self.bookmarks().get(idx) {
+                        match entry {
+                            Entry::Bookmark { url, .. } => {
+                                let _ = open::that(&url);
+                            }
+                            Entry::App { command, args, .. } => {
+                                let mut cmd = std::process::Command::new(command);
+                                if !args.is_empty() {
+                                    cmd.args(args);
+                                }
+                                let _ = cmd.spawn();
+                            }
+                        }
+                    }
                 }
 
                 self.set_filtered_bookmarks(
@@ -106,6 +115,7 @@ impl eframe::App for App {
 
                 let mut enter_url: Option<String> = None;
                 let mut should_add_bookmark = false;
+                let mut enter_entry: Option<Entry> = None;
 
                 if response.as_ref().map_or(false, |r| r.lost_focus())
                     && ctx.input(|i| i.key_pressed(egui::Key::Enter))
@@ -119,7 +129,7 @@ impl eframe::App for App {
                             should_add_bookmark = true;
                             enter_url = Some(query.to_string());
                         } else if let Some(bm) = self.filtered_bookmarks().first() {
-                            enter_url = Some(bm.url.clone());
+                            enter_entry = Some(bm.clone());
                         }
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -128,10 +138,22 @@ impl eframe::App for App {
                 if let Some(url) = enter_url {
                     if should_add_bookmark {
                         let _ = self.add_bookmark(url.clone());
-                    } else {
-                        let _ = self.increment_access_count(&url);
                     }
                     let _ = open::that(&url);
+                } else if let Some(entry) = enter_entry {
+                    let _ = self.increment_access_count_by_entry(&entry);
+                    match entry {
+                        Entry::Bookmark { url, .. } => {
+                            let _ = open::that(&url);
+                        }
+                        Entry::App { command, args, .. } => {
+                            let mut cmd = std::process::Command::new(command);
+                            if !args.is_empty() {
+                                cmd.args(&args);
+                            }
+                            let _ = cmd.spawn();
+                        }
+                    }
                 }
             });
         });
