@@ -66,73 +66,24 @@ pub fn data_file_path() -> PathBuf {
         PathBuf::from("bookmarks.json")
     }
 }
-
-pub struct App {
-    query: String,
+pub struct AppState {
     bookmarks: Vec<Entry>,
-    filtered_bookmarks: Vec<Entry>,
-    initial_focus: bool,
-    matcher: fuzzy_matcher::skim::SkimMatcherV2,
 }
 
-impl App {
+impl AppState {
     pub fn new(bookmarks: Vec<Entry>) -> Self {
-        Self {
-            query: String::new(),
-            bookmarks,
-            filtered_bookmarks: Vec::new(),
-            initial_focus: true,
-            matcher: SkimMatcherV2::default(),
-        }
-    }
-
-    pub fn query(&self) -> &str {
-        &self.query
-    }
-
-    pub fn query_mut(&mut self) -> &mut String {
-        &mut self.query
+        Self { bookmarks }
     }
 
     pub fn bookmarks(&self) -> &[Entry] {
         &self.bookmarks
     }
 
-    pub fn filtered_bookmarks(&self) -> &[Entry] {
-        &self.filtered_bookmarks
-    }
-
-    pub fn set_filtered_bookmarks(&mut self, bookmarks: Vec<Entry>) {
-        self.filtered_bookmarks = bookmarks;
-    }
-
-    pub fn initial_focus(&self) -> bool {
-        self.initial_focus
-    }
-
-    pub fn set_initial_focus(&mut self, focus: bool) {
-        self.initial_focus = focus;
-    }
-
-    pub fn fuzzy_search(&self, query: &str) -> Vec<(usize, i64)> {
-        if query.is_empty() {
-            return (0..self.bookmarks.len()).map(|i| (i, 0)).collect();
-        }
-
-        let mut results: Vec<(usize, i64)> = self
-            .bookmarks
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                self.matcher
-                    .fuzzy(entry.title(), query, false)
-                    .map(|(score, _)| (index, score))
-            })
-            .collect();
-
-        // スコアで降順ソート
-        results.sort_by(|a, b| b.1.cmp(&a.1));
-        results
+    pub fn save_bookmarks(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(&self.bookmarks)?;
+        let path = data_file_path();
+        fs::write(path, json)?;
+        Ok(())
     }
 
     pub fn increment_access_count_by_index(
@@ -150,7 +101,6 @@ impl App {
         &mut self,
         target: &Entry,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // try to find by identifying field
         let maybe_idx =
             self.bookmarks
                 .iter_mut()
@@ -177,15 +127,7 @@ impl App {
         Ok(())
     }
 
-    pub fn save_bookmarks(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let json = serde_json::to_string_pretty(&self.bookmarks)?;
-        let path = data_file_path();
-        fs::write(path, json)?;
-        Ok(())
-    }
-
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
-        // URLが既に存在するかチェック
         if self.bookmarks.iter().any(|b| match b {
             Entry::Bookmark { url: u, .. } => u == &url,
             _ => false,
@@ -193,8 +135,7 @@ impl App {
             return Ok(());
         }
 
-        // 新しいブックマークを追加
-        let title = self.extract_title_from_url(&url);
+        let title = Self::extract_title_from_url(&url);
         let entry = Entry::Bookmark {
             title,
             url,
@@ -206,12 +147,10 @@ impl App {
         Ok(())
     }
 
-    fn extract_title_from_url(&self, url: &str) -> String {
-        // Webページからタイトルを取得しようとする
-        match self.fetch_page_title(url) {
+    fn extract_title_from_url(url: &str) -> String {
+        match Self::fetch_page_title(url) {
             Ok(title) if !title.is_empty() => title,
             _ => {
-                // 取得できない場合はドメイン名を使用
                 if let Some(start) = url.find("://") {
                     let domain_part = &url[start + 3..];
                     if let Some(end) = domain_part.find('/') {
@@ -228,21 +167,105 @@ impl App {
         }
     }
 
-    fn fetch_page_title(&self, url: &str) -> Result<String, Box<dyn std::error::Error>> {
-        // HTTPリクエストでHTMLを取得
+    fn fetch_page_title(url: &str) -> Result<String, Box<dyn std::error::Error>> {
         let response = reqwest::blocking::get(url)?;
         let html = response.text()?;
 
-        // HTMLをパース
         let document = Html::parse_document(&html);
         let selector = Selector::parse("title")?;
 
-        // titleタグの内容を取得
         if let Some(title_element) = document.select(&selector).next() {
             let title = title_element.text().collect::<String>().trim().to_string();
             Ok(title)
         } else {
             Ok(String::new())
         }
+    }
+}
+
+pub struct App {
+    query: String,
+    state: AppState,
+    filtered_bookmarks: Vec<Entry>,
+    initial_focus: bool,
+    matcher: SkimMatcherV2,
+}
+
+impl App {
+    pub fn new(bookmarks: Vec<Entry>) -> Self {
+        Self {
+            query: String::new(),
+            state: AppState::new(bookmarks),
+            filtered_bookmarks: Vec::new(),
+            initial_focus: true,
+            matcher: SkimMatcherV2::default(),
+        }
+    }
+
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn query_mut(&mut self) -> &mut String {
+        &mut self.query
+    }
+
+    pub fn bookmarks(&self) -> &[Entry] {
+        self.state.bookmarks()
+    }
+
+    pub fn filtered_bookmarks(&self) -> &[Entry] {
+        &self.filtered_bookmarks
+    }
+
+    pub fn set_filtered_bookmarks(&mut self, bookmarks: Vec<Entry>) {
+        self.filtered_bookmarks = bookmarks;
+    }
+
+    pub fn initial_focus(&self) -> bool {
+        self.initial_focus
+    }
+
+    pub fn set_initial_focus(&mut self, focus: bool) {
+        self.initial_focus = focus;
+    }
+
+    pub fn fuzzy_search(&self, query: &str) -> Vec<(usize, i64)> {
+        if query.is_empty() {
+            return (0..self.state.bookmarks().len()).map(|i| (i, 0)).collect();
+        }
+
+        let mut results: Vec<(usize, i64)> = self
+            .state
+            .bookmarks()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                self.matcher
+                    .fuzzy(entry.title(), query, false)
+                    .map(|(score, _)| (index, score))
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results
+    }
+
+    pub fn increment_access_count_by_index(
+        &mut self,
+        index: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.state.increment_access_count_by_index(index)
+    }
+
+    pub fn increment_access_count_by_entry(
+        &mut self,
+        target: &Entry,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.state.increment_access_count_by_entry(target)
+    }
+
+    pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
+        self.state.add_bookmark(url)
     }
 }
