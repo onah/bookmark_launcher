@@ -184,13 +184,32 @@ mod eframe_ui {
 #[cfg(feature = "backend-eframe")]
 pub use eframe_ui::run_app;
 
-#[cfg(feature = "backend-fltk")]
+#[cfg(all(feature = "backend-fltk", not(feature = "backend-eframe")))]
 pub use crate::ui::backend_fltk::run_app;
-#[cfg(feature = "backend-windows")]
+
+#[cfg(all(
+    feature = "backend-windows",
+    not(feature = "backend-eframe"),
+    not(feature = "backend-fltk"),
+))]
 pub use crate::ui::backend_windows::run_app;
 
-#[cfg(feature = "backend-windows-rs")]
+#[cfg(all(
+    feature = "backend-windows-rs",
+    not(feature = "backend-eframe"),
+    not(feature = "backend-fltk"),
+    not(feature = "backend-windows"),
+))]
 pub use crate::ui::backend_windows_rs::run_app;
+
+#[cfg(all(
+    feature = "backend-tui",
+    not(feature = "backend-eframe"),
+    not(feature = "backend-fltk"),
+    not(feature = "backend-windows"),
+    not(feature = "backend-windows-rs"),
+))]
+pub use crate::ui::backend_tui::run_app;
 
 #[cfg(not(any(
     feature = "backend-eframe",
@@ -202,6 +221,3 @@ pub use crate::ui::backend_windows_rs::run_app;
 pub fn run_app(_bookmarks: Vec<Entry>) -> Result<(), Box<dyn std::error::Error>> {
     Err("No UI backend feature enabled".into())
 }
-
-#[cfg(feature = "backend-tui")]
-pub use crate::ui::backend_tui::run_app;

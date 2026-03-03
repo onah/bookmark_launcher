@@ -1,16 +1,18 @@
 use crate::app::App;
 use crate::app::Entry;
 use crossterm::event::{self, Event as CEvent, KeyCode};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm::execute;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use std::error::Error;
-use std::io::{self};
-use std::time::{Duration, Instant};
+use std::io;
+use std::time::Duration;
 
 pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
     // initialize app state
@@ -19,21 +21,26 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(&mut stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let tick_rate = Duration::from_millis(200);
-    let mut last_tick = Instant::now();
-
     let mut selected: usize = 0;
-    // clear any previous typed input events left in the terminal and reset query
+    // drain any pending events before starting
     while event::poll(Duration::from_millis(0))? {
-        // drain pending events
         let _ = event::read()?;
     }
-    app.query_mut().clear();
 
     loop {
+        // compute search results once per iteration
+        let search_results = app.fuzzy_search(app.query());
+        let filtered_indices: Vec<usize> = search_results.iter().map(|(i, _)| *i).collect();
+
+        // clamp selected before drawing
+        if !filtered_indices.is_empty() && selected >= filtered_indices.len() {
+            selected = filtered_indices.len() - 1;
+        }
+
         // render
         terminal.draw(|f| {
             let size = f.size();
@@ -47,21 +54,10 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 .block(Block::default().borders(Borders::ALL).title("Query"));
             f.render_widget(input, chunks[0]);
 
-            // compute fuzzy search results and display filtered list
-            let search_results = app.fuzzy_search(app.query());
-            let filtered_indices: Vec<usize> = search_results.iter().map(|(i, _)| *i).collect();
-
             let items: Vec<ListItem> = filtered_indices
                 .iter()
                 .filter_map(|idx| app.bookmarks().get(*idx))
-                .map(|e| match e {
-                    Entry::Bookmark { title, url, .. } => {
-                        ListItem::new(Span::raw(format!("{} ({})", title, url)))
-                    }
-                    Entry::App { title, command, .. } => {
-                        ListItem::new(Span::raw(format!("{} (app: {})", title, command)))
-                    }
-                })
+                .map(|e| ListItem::new(e.display()))
                 .collect();
 
             let list = List::new(items)
@@ -69,25 +65,17 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
             let mut state = ratatui::widgets::ListState::default();
-            if !filtered_indices.is_empty() {
-                // clamp selected to available range
-                if selected >= filtered_indices.len() {
-                    selected = filtered_indices.len() - 1;
-                }
-                state.select(Some(selected));
-            } else {
+            if filtered_indices.is_empty() {
                 state.select(None);
+            } else {
+                state.select(Some(selected));
             }
 
             f.render_stateful_widget(list, chunks[1], &mut state);
         })?;
 
         // input
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-
-        if event::poll(timeout)? {
+        if event::poll(Duration::from_millis(50))? {
             if let CEvent::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
@@ -106,16 +94,12 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                         }
                     }
                     KeyCode::Down => {
-                        // move within filtered results
-                        let max = app.fuzzy_search(app.query()).len();
-                        if selected + 1 < max {
+                        if selected + 1 < search_results.len() {
                             selected += 1;
                         }
                     }
                     KeyCode::Enter => {
-                        // operate on filtered selection
-                        let results = app.fuzzy_search(app.query());
-                        if let Some((idx, _)) = results.get(selected) {
+                        if let Some((idx, _)) = search_results.get(selected) {
                             let real_idx = *idx;
                             // increment access count and persist
                             let _ = app.increment_access_count_by_index(real_idx);
@@ -139,14 +123,11 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-
-        if last_tick.elapsed() >= tick_rate {
-            last_tick = Instant::now();
-        }
     }
 
     // restore terminal
     disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     Ok(())
