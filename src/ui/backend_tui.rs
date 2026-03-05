@@ -102,7 +102,18 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                         }
                     }
                     KeyCode::Enter => {
-                        if let Some((idx, _)) = search_results.get(selected) {
+                        let query = app.query().trim().to_string();
+                        if !query.is_empty()
+                            && (query.starts_with("http://")
+                                || query.starts_with("https://")
+                                || query.contains('.'))
+                            && search_results.is_empty()
+                        {
+                            // URL-like input: save to bookmarks and open
+                            let _ = app.add_bookmark(query.clone());
+                            let _ = open::that(&query);
+                            break;
+                        } else if let Some((idx, _)) = search_results.get(selected) {
                             let real_idx = *idx;
                             // increment access count and persist
                             let _ = app.increment_access_count_by_index(real_idx);

@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum Entry {
     Bookmark {
         title: String,
@@ -56,14 +56,20 @@ impl Entry {
     }
 }
 
+#[derive(Serialize, Deserialize, Default)]
+pub struct BookmarkFile {
+    #[serde(default)]
+    pub bookmarks: Vec<Entry>,
+}
+
 pub fn data_file_path() -> PathBuf {
     if let Some(proj) = ProjectDirs::from("com", "onah", "bookmark_launcher") {
         let dir = proj.data_dir();
         // ignore error if directory already exists or cannot be created
         let _ = std::fs::create_dir_all(dir);
-        dir.join("bookmarks.json")
+        dir.join("bookmarks.toml")
     } else {
-        PathBuf::from("bookmarks.json")
+        PathBuf::from("bookmarks.toml")
     }
 }
 pub struct AppState {
@@ -80,9 +86,10 @@ impl AppState {
     }
 
     pub fn save_bookmarks(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let json = serde_json::to_string_pretty(&self.bookmarks)?;
+        let file = BookmarkFile { bookmarks: self.bookmarks.clone() };
+        let content = toml::to_string_pretty(&file)?;
         let path = data_file_path();
-        fs::write(path, json)?;
+        fs::write(path, content)?;
         Ok(())
     }
 
