@@ -86,7 +86,9 @@ impl AppState {
     }
 
     pub fn save_bookmarks(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let file = BookmarkFile { bookmarks: self.bookmarks.clone() };
+        let file = BookmarkFile {
+            bookmarks: self.bookmarks.clone(),
+        };
         let content = toml::to_string_pretty(&file)?;
         let path = data_file_path();
         fs::write(path, content)?;
