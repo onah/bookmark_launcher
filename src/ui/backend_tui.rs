@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::app::Entry;
-use crossterm::event::{self, Event as CEvent, KeyCode};
+use crossterm::event::{self, Event as CEvent, KeyCode, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -77,6 +77,9 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
         // input
         if event::poll(Duration::from_millis(50))? {
             if let CEvent::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     KeyCode::Char(c) => {
@@ -116,6 +119,7 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                                         let _ = cmd.spawn();
                                     }
                                 }
+                                break;
                             }
                         }
                     }
