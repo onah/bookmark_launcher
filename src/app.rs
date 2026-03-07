@@ -1,6 +1,5 @@
 use directories::ProjectDirs;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use reqwest;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -106,36 +105,6 @@ impl AppState {
         Ok(())
     }
 
-    pub fn increment_access_count_by_entry(
-        &mut self,
-        target: &Entry,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let maybe_idx =
-            self.bookmarks
-                .iter_mut()
-                .enumerate()
-                .find_map(|(i, e)| match (e, target) {
-                    (Entry::Bookmark { url: u1, .. }, Entry::Bookmark { url: u2, .. })
-                        if u1 == u2 =>
-                    {
-                        Some(i)
-                    }
-                    (Entry::App { command: c1, .. }, Entry::App { command: c2, .. })
-                        if c1 == c2 =>
-                    {
-                        Some(i)
-                    }
-                    _ => None,
-                });
-
-        if let Some(idx) = maybe_idx {
-            let entry = &mut self.bookmarks[idx];
-            *entry.access_count_mut() += 1;
-            self.save_bookmarks()?;
-        }
-        Ok(())
-    }
-
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
         if self.bookmarks.iter().any(|b| match b {
             Entry::Bookmark { url: u, .. } => u == &url,
@@ -195,8 +164,6 @@ impl AppState {
 pub struct App {
     query: String,
     state: AppState,
-    filtered_bookmarks: Vec<Entry>,
-    initial_focus: bool,
     matcher: SkimMatcherV2,
 }
 
@@ -205,8 +172,6 @@ impl App {
         Self {
             query: String::new(),
             state: AppState::new(bookmarks),
-            filtered_bookmarks: Vec::new(),
-            initial_focus: true,
             matcher: SkimMatcherV2::default(),
         }
     }
@@ -221,22 +186,6 @@ impl App {
 
     pub fn bookmarks(&self) -> &[Entry] {
         self.state.bookmarks()
-    }
-
-    pub fn filtered_bookmarks(&self) -> &[Entry] {
-        &self.filtered_bookmarks
-    }
-
-    pub fn set_filtered_bookmarks(&mut self, bookmarks: Vec<Entry>) {
-        self.filtered_bookmarks = bookmarks;
-    }
-
-    pub fn initial_focus(&self) -> bool {
-        self.initial_focus
-    }
-
-    pub fn set_initial_focus(&mut self, focus: bool) {
-        self.initial_focus = focus;
     }
 
     pub fn fuzzy_search(&self, query: &str) -> Vec<(usize, i64)> {
@@ -265,13 +214,6 @@ impl App {
         index: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.state.increment_access_count_by_index(index)
-    }
-
-    pub fn increment_access_count_by_entry(
-        &mut self,
-        target: &Entry,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.state.increment_access_count_by_entry(target)
     }
 
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {

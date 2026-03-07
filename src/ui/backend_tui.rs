@@ -75,67 +75,65 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
         })?;
 
         // input
-        if event::poll(Duration::from_millis(50))? {
-            if let CEvent::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
+        if event::poll(Duration::from_millis(50))?
+            && let CEvent::Key(key) = event::read()?
+        {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Char(c) => {
+                    app.query_mut().push(c);
+                    // reset selection when query changes
+                    selected = 0;
                 }
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Char(c) => {
-                        app.query_mut().push(c);
-                        // reset selection when query changes
-                        selected = 0;
+                KeyCode::Backspace => {
+                    app.query_mut().pop();
+                    selected = 0;
+                }
+                KeyCode::Up => {
+                    selected = selected.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    if selected + 1 < search_results.len() {
+                        selected += 1;
                     }
-                    KeyCode::Backspace => {
-                        app.query_mut().pop();
-                        selected = 0;
-                    }
-                    KeyCode::Up => {
-                        if selected > 0 {
-                            selected -= 1;
-                        }
-                    }
-                    KeyCode::Down => {
-                        if selected + 1 < search_results.len() {
-                            selected += 1;
-                        }
-                    }
-                    KeyCode::Enter => {
-                        let query = app.query().trim().to_string();
-                        if !query.is_empty()
-                            && (query.starts_with("http://")
-                                || query.starts_with("https://")
-                                || query.contains('.'))
-                            && search_results.is_empty()
-                        {
-                            // URL-like input: save to bookmarks and open
-                            let _ = app.add_bookmark(query.clone());
-                            let _ = open::that(&query);
-                            break;
-                        } else if let Some((idx, _)) = search_results.get(selected) {
-                            let real_idx = *idx;
-                            // increment access count and persist
-                            let _ = app.increment_access_count_by_index(real_idx);
-                            if let Some(entry) = app.bookmarks().get(real_idx) {
-                                match entry {
-                                    Entry::Bookmark { url, .. } => {
-                                        let _ = open::that(url);
-                                    }
-                                    Entry::App { command, args, .. } => {
-                                        let mut cmd = std::process::Command::new(command);
-                                        if !args.is_empty() {
-                                            cmd.args(args);
-                                        }
-                                        let _ = cmd.spawn();
-                                    }
+                }
+                KeyCode::Enter => {
+                    let query = app.query().trim().to_string();
+                    if !query.is_empty()
+                        && (query.starts_with("http://")
+                            || query.starts_with("https://")
+                            || query.contains('.'))
+                        && search_results.is_empty()
+                    {
+                        // URL-like input: save to bookmarks and open
+                        let _ = app.add_bookmark(query.clone());
+                        let _ = open::that(&query);
+                        break;
+                    } else if let Some((idx, _)) = search_results.get(selected) {
+                        let real_idx = *idx;
+                        // increment access count and persist
+                        let _ = app.increment_access_count_by_index(real_idx);
+                        if let Some(entry) = app.bookmarks().get(real_idx) {
+                            match entry {
+                                Entry::Bookmark { url, .. } => {
+                                    let _ = open::that(url);
                                 }
-                                break;
+                                Entry::App { command, args, .. } => {
+                                    let mut cmd = std::process::Command::new(command);
+                                    if !args.is_empty() {
+                                        cmd.args(args);
+                                    }
+                                    let _ = cmd.spawn();
+                                }
                             }
+                            break;
                         }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
     }

@@ -2,6 +2,20 @@ use crate::app::{App, Entry};
 use eframe::egui;
 use egui::FontFamily;
 
+struct EframeApp {
+    app: App,
+    initial_focus: bool,
+}
+
+impl EframeApp {
+    fn new(bookmarks: Vec<Entry>) -> Self {
+        Self {
+            app: App::new(bookmarks),
+            initial_focus: true,
+        }
+    }
+}
+
 pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn std::error::Error>> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -18,7 +32,7 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn std::error::Error>> 
         options,
         Box::new(|cc| {
             setup_custom_fonts(&cc.egui_ctx);
-            Ok(Box::new(App::new(bookmarks)))
+            Ok(Box::new(EframeApp::new(bookmarks)))
         }),
     )
     .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -46,7 +60,7 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-impl eframe::App for App {
+impl eframe::App for EframeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -64,13 +78,13 @@ impl eframe::App for App {
                     egui::FontId::new(20.0, egui::FontFamily::Proportional),
                 );
 
-                response = Some(ui.text_edit_singleline(self.query_mut()));
+                response = Some(ui.text_edit_singleline(self.app.query_mut()));
 
-                if self.initial_focus() {
+                if self.initial_focus {
                     if let Some(r) = response.as_mut() {
                         r.request_focus();
                     }
-                    self.set_initial_focus(false);
+                    self.initial_focus = false;
                 }
             });
 
@@ -81,10 +95,10 @@ impl eframe::App for App {
                 let mut clicked_index: Option<usize> = None;
 
                 // Fuzzy search results (ordered by relevance)
-                let search_results = self.fuzzy_search(self.query());
+                let search_results = self.app.fuzzy_search(self.app.query());
 
                 for (index, _) in &search_results {
-                    if let Some(entry) = self.bookmarks().get(*index) {
+                    if let Some(entry) = self.app.bookmarks().get(*index) {
                         ui.horizontal(|ui| {
                             if ui.add(egui::Button::new(entry.display())).clicked() {
                                 clicked_index = Some(*index);
@@ -94,8 +108,8 @@ impl eframe::App for App {
                 }
 
                 if let Some(idx) = clicked_index {
-                    let _ = self.increment_access_count_by_index(idx);
-                    if let Some(entry) = self.bookmarks().get(idx) {
+                    let _ = self.app.increment_access_count_by_index(idx);
+                    if let Some(entry) = self.app.bookmarks().get(idx) {
                         match entry {
                             Entry::Bookmark { url, .. } => {
                                 let _ = open::that(&url);
@@ -111,21 +125,14 @@ impl eframe::App for App {
                     }
                 }
 
-                self.set_filtered_bookmarks(
-                    search_results
-                        .iter()
-                        .filter_map(|(index, _)| self.bookmarks().get(*index).cloned())
-                        .collect(),
-                );
-
                 let mut enter_url: Option<String> = None;
                 let mut should_add_bookmark = false;
-                let mut enter_entry: Option<Entry> = None;
+                let mut enter_index: Option<usize> = None;
 
                 if response.as_ref().map_or(false, |r| r.lost_focus())
                     && ctx.input(|i| i.key_pressed(egui::Key::Enter))
                 {
-                    let query = self.query().trim();
+                    let query = self.app.query().trim();
                     if !query.is_empty() {
                         if query.starts_with("http://")
                             || query.starts_with("https://")
@@ -133,8 +140,8 @@ impl eframe::App for App {
                         {
                             should_add_bookmark = true;
                             enter_url = Some(query.to_string());
-                        } else if let Some(bm) = self.filtered_bookmarks().first() {
-                            enter_entry = Some(bm.clone());
+                        } else if let Some(&(idx, _)) = search_results.first() {
+                            enter_index = Some(idx);
                         }
                     }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -142,21 +149,23 @@ impl eframe::App for App {
 
                 if let Some(url) = enter_url {
                     if should_add_bookmark {
-                        let _ = self.add_bookmark(url.clone());
+                        let _ = self.app.add_bookmark(url.clone());
                     }
                     let _ = open::that(&url);
-                } else if let Some(entry) = enter_entry {
-                    let _ = self.increment_access_count_by_entry(&entry);
-                    match entry {
-                        Entry::Bookmark { url, .. } => {
-                            let _ = open::that(&url);
-                        }
-                        Entry::App { command, args, .. } => {
-                            let mut cmd = std::process::Command::new(command);
-                            if !args.is_empty() {
-                                cmd.args(&args);
+                } else if let Some(idx) = enter_index {
+                    let _ = self.app.increment_access_count_by_index(idx);
+                    if let Some(entry) = self.app.bookmarks().get(idx) {
+                        match entry {
+                            Entry::Bookmark { url, .. } => {
+                                let _ = open::that(&url);
                             }
-                            let _ = cmd.spawn();
+                            Entry::App { command, args, .. } => {
+                                let mut cmd = std::process::Command::new(command);
+                                if !args.is_empty() {
+                                    cmd.args(args);
+                                }
+                                let _ = cmd.spawn();
+                            }
                         }
                     }
                 }
