@@ -1,6 +1,6 @@
-use crate::app::App;
 use crate::app::Entry;
-use crossterm::event::{self, Event as CEvent, KeyCode, KeyEventKind};
+use crate::app::{App, SearchMode};
+use crossterm::event::{self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -33,7 +33,7 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
 
     loop {
         // compute search results once per iteration
-        let search_results = app.fuzzy_search(app.query());
+        let search_results = app.search(app.query());
         let filtered_indices: Vec<usize> = search_results.iter().map(|(i, _)| *i).collect();
 
         // clamp selected before drawing
@@ -50,8 +50,15 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 .constraints([Constraint::Length(3), Constraint::Min(1)].as_ref())
                 .split(size);
 
+            let mode_label = if app.search_mode() == SearchMode::Migemo && !app.is_migemo_ready() {
+                "Migemo (dict missing)"
+            } else {
+                app.search_mode_label()
+            };
+
+            let input_title = format!("Query [{}]", mode_label);
             let input = Paragraph::new(app.query())
-                .block(Block::default().borders(Borders::ALL).title("Query"));
+                .block(Block::default().borders(Borders::ALL).title(input_title));
             f.render_widget(input, chunks[0]);
 
             let items: Vec<ListItem> = filtered_indices
@@ -81,6 +88,24 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
+
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                match key.code {
+                    KeyCode::Char('f') => {
+                        app.set_search_mode(SearchMode::Fuzzy);
+                        selected = 0;
+                        continue;
+                    }
+                    KeyCode::Char('t') => {
+                        // Toggle to Migemo mode
+                        app.set_search_mode(SearchMode::Migemo);
+                        selected = 0;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => break,
                 KeyCode::Char(c) => {

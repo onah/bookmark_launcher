@@ -12,6 +12,8 @@ reqwest = { version = "0.12", features = ["blocking"] }
 scraper = "0.19"
 fuzzy-matcher = "0.3"
 directories = "4.0"
+regex = "1"
+rustmigemo = { git = "https://github.com/oguna/rustmigemo", branch = "master" }
 [features]
 # Default path is TUI. Keep eframe as an optional fallback backend.
 default = ["backend-tui"]

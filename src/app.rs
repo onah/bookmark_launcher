@@ -1,5 +1,13 @@
 use directories::ProjectDirs;
 use fuzzy_matcher::skim::SkimMatcherV2;
+#[cfg(feature = "backend-tui")]
+use regex::Regex;
+#[cfg(feature = "backend-tui")]
+use rustmigemo::migemo::compact_dictionary::CompactDictionary;
+#[cfg(feature = "backend-tui")]
+use rustmigemo::migemo::query::query as migemo_query;
+#[cfg(feature = "backend-tui")]
+use rustmigemo::migemo::regex_generator::RegexOperator;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -71,6 +79,12 @@ pub fn data_file_path() -> PathBuf {
         PathBuf::from("bookmarks.toml")
     }
 }
+
+#[cfg(feature = "backend-tui")]
+pub fn migemo_dict_path() -> PathBuf {
+    data_file_path().with_file_name("migemo-compact-dict")
+}
+
 pub struct AppState {
     bookmarks: Vec<Entry>,
 }
@@ -161,10 +175,45 @@ impl AppState {
     }
 }
 
+#[cfg(feature = "backend-tui")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchMode {
+    Fuzzy,
+    Migemo,
+}
+
+#[cfg(feature = "backend-tui")]
+struct MigemoEngine {
+    dictionary: CompactDictionary,
+}
+
+#[cfg(feature = "backend-tui")]
+impl MigemoEngine {
+    fn load() -> Option<Self> {
+        let dict_path = migemo_dict_path();
+        let bytes = fs::read(dict_path).ok()?;
+        Some(Self {
+            dictionary: CompactDictionary::new(&bytes),
+        })
+    }
+
+    fn build_regex(&self, query: &str) -> Option<Regex> {
+        let pattern = migemo_query(query.to_string(), &self.dictionary, &RegexOperator::Default);
+        if pattern.is_empty() {
+            return None;
+        }
+        Regex::new(&pattern).ok()
+    }
+}
+
 pub struct App {
     query: String,
     state: AppState,
     matcher: SkimMatcherV2,
+    #[cfg(feature = "backend-tui")]
+    search_mode: SearchMode,
+    #[cfg(feature = "backend-tui")]
+    migemo: Option<MigemoEngine>,
 }
 
 impl App {
@@ -173,6 +222,10 @@ impl App {
             query: String::new(),
             state: AppState::new(bookmarks),
             matcher: SkimMatcherV2::default(),
+            #[cfg(feature = "backend-tui")]
+            search_mode: SearchMode::Fuzzy,
+            #[cfg(feature = "backend-tui")]
+            migemo: MigemoEngine::load(),
         }
     }
 
@@ -186,6 +239,37 @@ impl App {
 
     pub fn bookmarks(&self) -> &[Entry] {
         self.state.bookmarks()
+    }
+
+    #[cfg(feature = "backend-tui")]
+    pub fn search_mode(&self) -> SearchMode {
+        self.search_mode
+    }
+
+    #[cfg(feature = "backend-tui")]
+    pub fn set_search_mode(&mut self, mode: SearchMode) {
+        self.search_mode = mode;
+    }
+
+    #[cfg(feature = "backend-tui")]
+    pub fn search_mode_label(&self) -> &'static str {
+        match self.search_mode {
+            SearchMode::Fuzzy => "Fuzzy",
+            SearchMode::Migemo => "Migemo",
+        }
+    }
+
+    #[cfg(feature = "backend-tui")]
+    pub fn is_migemo_ready(&self) -> bool {
+        self.migemo.is_some()
+    }
+
+    #[cfg(feature = "backend-tui")]
+    pub fn search(&self, query: &str) -> Vec<(usize, i64)> {
+        match self.search_mode {
+            SearchMode::Fuzzy => self.fuzzy_search(query),
+            SearchMode::Migemo => self.migemo_search(query),
+        }
     }
 
     pub fn fuzzy_search(&self, query: &str) -> Vec<(usize, i64)> {
@@ -207,6 +291,34 @@ impl App {
 
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results
+    }
+
+    #[cfg(feature = "backend-tui")]
+    fn migemo_search(&self, query: &str) -> Vec<(usize, i64)> {
+        if query.is_empty() {
+            return (0..self.state.bookmarks().len()).map(|i| (i, 0)).collect();
+        }
+
+        let Some(engine) = &self.migemo else {
+            return Vec::new();
+        };
+
+        let Some(regex) = engine.build_regex(query) else {
+            return Vec::new();
+        };
+
+        self.state
+            .bookmarks()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                if regex.is_match(entry.title()) {
+                    Some((index, 0))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn increment_access_count_by_index(

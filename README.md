@@ -46,6 +46,25 @@ The executable will be available at `target/release/bookmark_launcher`.
 
 5. Press `Escape` to close the application
 
+### Search modes (TUI)
+
+- `Ctrl+F`: Switch to fuzzy search mode
+- `Ctrl+T`: Switch to migemo search mode
+
+In migemo mode, romaji input can match Japanese text (for example, `puro` can match `プロ`).
+
+### Migemo dictionary location
+
+Place `migemo-compact-dict` in the same data directory as `bookmarks.toml`.
+
+On macOS, this is typically under:
+
+- `~/Library/Application Support/com/onah/bookmark_launcher/`
+
+You can download the dictionary from:
+
+- `https://github.com/oguna/migemo-compact-dict-latest`
+
 ### Backend selection
 
 - Default backend is TUI:
