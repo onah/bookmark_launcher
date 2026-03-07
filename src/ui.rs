@@ -1,7 +1,7 @@
-#[cfg(feature = "backend-tui")]
-mod backend_tui;
 #[cfg(feature = "backend-eframe")]
 mod backend_eframe;
+#[cfg(feature = "backend-tui")]
+mod backend_tui;
 
 #[cfg(feature = "backend-tui")]
 pub use backend_tui::run_app;
