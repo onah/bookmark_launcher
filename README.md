@@ -46,6 +46,17 @@ The executable will be available at `target/release/bookmark_launcher`.
 
 5. Press `Escape` to close the application
 
+### Backend selection
+
+- Default backend is TUI:
+  ```bash
+  cargo run
+  ```
+- Run with eframe backend only:
+  ```bash
+  cargo run --no-default-features --features backend-eframe
+  ```
+
 ## Bookmark Management
 
 ### Adding Bookmarks

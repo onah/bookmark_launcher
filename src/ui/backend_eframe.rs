@@ -43,19 +43,22 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn std::error::Error>> 
 fn setup_custom_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
-    fonts.font_data.insert(
-        "note_sans_jp".to_owned(),
-        egui::FontData::from_static(include_bytes!(
-            "../../assets/NotoSansJP-VariableFont_wght.ttf"
-        ))
-        .into(),
-    );
+    let font_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("NotoSansJP-VariableFont_wght.ttf");
 
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, "note_sans_jp".to_owned());
+    if let Ok(font_bytes) = std::fs::read(font_path) {
+        fonts.font_data.insert(
+            "noto_sans_jp".to_owned(),
+            egui::FontData::from_owned(font_bytes).into(),
+        );
+
+        fonts
+            .families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .insert(0, "noto_sans_jp".to_owned());
+    }
 
     ctx.set_fonts(fonts);
 }

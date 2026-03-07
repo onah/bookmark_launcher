@@ -13,7 +13,7 @@ scraper = "0.19"
 fuzzy-matcher = "0.3"
 directories = "4.0"
 [features]
-# default uses the TUI backend
+# Default path is TUI. Keep eframe as an optional fallback backend.
 default = ["backend-tui"]
 backend-eframe = ["eframe"]
 backend-tui = ["ratatui", "crossterm"]
