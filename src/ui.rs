@@ -1,5 +1,4 @@
 // include the UI abstraction and platform backends
-mod backend;
 #[cfg(feature = "backend-eframe")]
 mod backend_eframe;
 #[cfg(feature = "backend-tui")]

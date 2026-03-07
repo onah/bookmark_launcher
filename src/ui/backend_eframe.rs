@@ -112,7 +112,7 @@ impl eframe::App for EframeApp {
                     if let Some(entry) = self.app.bookmarks().get(idx) {
                         match entry {
                             Entry::Bookmark { url, .. } => {
-                                let _ = open::that(&url);
+                                let _ = open::that(url);
                             }
                             Entry::App { command, args, .. } => {
                                 let mut cmd = std::process::Command::new(command);
@@ -129,7 +129,7 @@ impl eframe::App for EframeApp {
                 let mut should_add_bookmark = false;
                 let mut enter_index: Option<usize> = None;
 
-                if response.as_ref().map_or(false, |r| r.lost_focus())
+                if response.as_ref().is_some_and(|r| r.lost_focus())
                     && ctx.input(|i| i.key_pressed(egui::Key::Enter))
                 {
                     let query = self.app.query().trim();
@@ -151,13 +151,13 @@ impl eframe::App for EframeApp {
                     if should_add_bookmark {
                         let _ = self.app.add_bookmark(url.clone());
                     }
-                    let _ = open::that(&url);
+                    let _ = open::that(url);
                 } else if let Some(idx) = enter_index {
                     let _ = self.app.increment_access_count_by_index(idx);
                     if let Some(entry) = self.app.bookmarks().get(idx) {
                         match entry {
                             Entry::Bookmark { url, .. } => {
-                                let _ = open::that(&url);
+                                let _ = open::that(url);
                             }
                             Entry::App { command, args, .. } => {
                                 let mut cmd = std::process::Command::new(command);
