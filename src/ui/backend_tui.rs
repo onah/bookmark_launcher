@@ -8,11 +8,169 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use std::error::Error;
 use std::io;
 use std::time::Duration;
+
+fn build_highlighted_item(
+    entry: &Entry,
+    matched: &std::collections::HashSet<usize>,
+) -> ListItem<'static> {
+    let highlight_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let normal_style = Style::default();
+
+    let title = entry.title();
+    let suffix = match entry {
+        Entry::Bookmark { url, .. } => format!(" ({})", url),
+        Entry::App { command, args, .. } => {
+            if args.is_empty() {
+                format!(" ({})", command)
+            } else {
+                format!(" ({} {})", command, args.join(" "))
+            }
+        }
+    };
+
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let mut cur_highlighted = false;
+
+    for (i, c) in title.chars().enumerate() {
+        let is_highlighted = matched.contains(&i);
+        if is_highlighted != cur_highlighted && !buf.is_empty() {
+            let style = if cur_highlighted {
+                highlight_style
+            } else {
+                normal_style
+            };
+            spans.push(Span::styled(buf.clone(), style));
+            buf.clear();
+        }
+        cur_highlighted = is_highlighted;
+        buf.push(c);
+    }
+    if !buf.is_empty() {
+        let style = if cur_highlighted {
+            highlight_style
+        } else {
+            normal_style
+        };
+        spans.push(Span::styled(buf, style));
+    }
+    spans.push(Span::raw(suffix));
+
+    ListItem::new(Line::from(spans))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use std::collections::HashSet;
+
+    fn bookmark_entry(title: &str) -> Entry {
+        Entry::Bookmark {
+            title: title.to_string(),
+            url: "https://example.com".to_string(),
+            access_count: 0,
+        }
+    }
+
+    #[test]
+    fn no_matched_chars_renders_no_yellow() {
+        let entry = bookmark_entry("GitHub");
+        let matched: HashSet<usize> = HashSet::new();
+        let item = build_highlighted_item(&entry, &matched);
+
+        let backend = TestBackend::new(30, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                let list = List::new(vec![item]);
+                f.render_widget(list, f.size());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        for x in 0..6u16 {
+            assert_ne!(
+                buffer.get(x, 0).fg,
+                Color::Yellow,
+                "char at x={} should not be yellow",
+                x
+            );
+        }
+    }
+
+    #[test]
+    fn matched_chars_are_rendered_yellow() {
+        let entry = bookmark_entry("GitHub");
+        let matched: HashSet<usize> = [0, 3].into_iter().collect(); // G, H
+        let item = build_highlighted_item(&entry, &matched);
+
+        let backend = TestBackend::new(30, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                let list = List::new(vec![item]);
+                f.render_widget(list, f.size());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        assert_eq!(
+            buffer.get(0, 0).fg,
+            Color::Yellow,
+            "'G' at x=0 should be Yellow"
+        );
+        assert_eq!(
+            buffer.get(3, 0).fg,
+            Color::Yellow,
+            "'H' at x=3 should be Yellow"
+        );
+        assert_ne!(
+            buffer.get(1, 0).fg,
+            Color::Yellow,
+            "'i' at x=1 should not be Yellow"
+        );
+        assert_ne!(
+            buffer.get(2, 0).fg,
+            Color::Yellow,
+            "'t' at x=2 should not be Yellow"
+        );
+    }
+
+    #[test]
+    fn suffix_is_not_yellow() {
+        let entry = bookmark_entry("Go");
+        let matched: HashSet<usize> = [0, 1].into_iter().collect(); // both chars matched
+        let item = build_highlighted_item(&entry, &matched);
+
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                let list = List::new(vec![item]);
+                f.render_widget(list, f.size());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        // suffix " (https://example.com)" starts at x=2
+        // x=2 is ' ' (space before paren) — should not be yellow
+        assert_ne!(
+            buffer.get(2, 0).fg,
+            Color::Yellow,
+            "suffix space should not be yellow"
+        );
+    }
+}
 
 pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
     // initialize app state
@@ -64,7 +222,13 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
             let items: Vec<ListItem> = filtered_indices
                 .iter()
                 .filter_map(|idx| app.bookmarks().get(*idx))
-                .map(|e| ListItem::new(e.display()))
+                .map(|entry| {
+                    let positions: std::collections::HashSet<usize> = app
+                        .match_char_positions(entry.title(), app.query())
+                        .into_iter()
+                        .collect();
+                    build_highlighted_item(entry, &positions)
+                })
                 .collect();
 
             let list = List::new(items)

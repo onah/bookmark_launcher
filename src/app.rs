@@ -1,4 +1,5 @@
 use directories::ProjectDirs;
+use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 #[cfg(feature = "backend-tui")]
 use regex::Regex;
@@ -293,6 +294,31 @@ impl App {
         results
     }
 
+    /// Returns the char indices (into `title`) that contributed to the match.
+    pub fn match_char_positions(&self, title: &str, query: &str) -> Vec<usize> {
+        #[cfg(feature = "backend-tui")]
+        {
+            match self.search_mode {
+                SearchMode::Fuzzy => self.fuzzy_match_positions(title, query),
+                SearchMode::Migemo => self.migemo_match_positions(title, query),
+            }
+        }
+        #[cfg(not(feature = "backend-tui"))]
+        {
+            self.fuzzy_match_positions(title, query)
+        }
+    }
+
+    fn fuzzy_match_positions(&self, title: &str, query: &str) -> Vec<usize> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        self.matcher
+            .fuzzy_indices(title, query)
+            .map(|(_, indices)| indices)
+            .unwrap_or_default()
+    }
+
     #[cfg(feature = "backend-tui")]
     fn migemo_search(&self, query: &str) -> Vec<(usize, i64)> {
         if query.is_empty() {
@@ -321,6 +347,27 @@ impl App {
             .collect()
     }
 
+    #[cfg(feature = "backend-tui")]
+    fn migemo_match_positions(&self, title: &str, query: &str) -> Vec<usize> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let Some(engine) = &self.migemo else {
+            return Vec::new();
+        };
+        let Some(regex) = engine.build_regex(query) else {
+            return Vec::new();
+        };
+        let ranges: Vec<std::ops::Range<usize>> =
+            regex.find_iter(title).map(|m| m.start()..m.end()).collect();
+        title
+            .char_indices()
+            .enumerate()
+            .filter(|(_, (byte_pos, _))| ranges.iter().any(|r| r.contains(byte_pos)))
+            .map(|(char_idx, _)| char_idx)
+            .collect()
+    }
+
     pub fn increment_access_count_by_index(
         &mut self,
         index: usize,
@@ -330,5 +377,91 @@ impl App {
 
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
         self.state.add_bookmark(url)
+    }
+}
+
+#[cfg(test)]
+mod highlight_tests {
+    use super::*;
+
+    fn bookmark(title: &str) -> Entry {
+        Entry::Bookmark {
+            title: title.to_string(),
+            url: "https://example.com".to_string(),
+            access_count: 0,
+        }
+    }
+
+    #[test]
+    fn empty_query_returns_no_positions() {
+        let app = App::new(vec![bookmark("GitHub")]);
+        assert!(app.match_char_positions("GitHub", "").is_empty());
+    }
+
+    #[test]
+    fn no_match_returns_empty_positions() {
+        let app = App::new(vec![bookmark("GitHub")]);
+        assert!(app.match_char_positions("GitHub", "xyz").is_empty());
+    }
+
+    #[test]
+    fn positions_agree_with_search() {
+        // Tests that match_char_positions is non-empty exactly when fuzzy_search finds a hit.
+        let app = App::new(vec![bookmark("GitHub")]);
+        let query = "gh";
+        let search_found_match = !app.fuzzy_search(query).is_empty();
+        let positions = app.match_char_positions("GitHub", query);
+        assert_eq!(
+            search_found_match,
+            !positions.is_empty(),
+            "match_char_positions and fuzzy_search should agree on whether a match exists"
+        );
+    }
+
+    #[test]
+    fn all_returned_positions_within_title_length() {
+        let app = App::new(vec![bookmark("GitHub")]);
+        let positions = app.match_char_positions("GitHub", "gh");
+        let title_len = "GitHub".chars().count();
+        for &p in &positions {
+            assert!(
+                p < title_len,
+                "position {} out of bounds (len={})",
+                p,
+                title_len
+            );
+        }
+    }
+}
+
+#[cfg(all(test, feature = "backend-tui"))]
+mod tests {
+    use super::*;
+
+    fn bookmark(title: &str) -> Entry {
+        Entry::Bookmark {
+            title: title.to_string(),
+            url: "https://example.com".to_string(),
+            access_count: 0,
+        }
+    }
+
+    #[test]
+    fn migemo_mode_jin_does_not_hit_jinji() {
+        let mut app = App::new(vec![bookmark("人事")]);
+        assert!(
+            app.is_migemo_ready(),
+            "Migemo dictionary is not loaded at {}",
+            migemo_dict_path().display()
+        );
+
+        app.set_search_mode(SearchMode::Migemo);
+        let results = app.search("jin");
+
+        assert!(
+            results.is_empty(),
+            "Expected no hit for query 'jin' against '人事', got: {:?}",
+            results
+        );
     }
 }
