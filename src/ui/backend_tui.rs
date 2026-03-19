@@ -266,12 +266,16 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                         selected = 0;
                         continue;
                     }
+                    KeyCode::Char('q') => {
+                        // Ctrl+Q to quit
+                        break;
+                    }
                     _ => {}
                 }
             }
 
             match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Esc => break,
                 KeyCode::Char(c) => {
                     app.query_mut().push(c);
                     // reset selection when query changes
