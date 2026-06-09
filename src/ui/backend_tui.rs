@@ -15,39 +15,20 @@ use std::error::Error;
 use std::io;
 use std::time::Duration;
 
-fn build_highlighted_item(
-    entry: &Entry,
+fn highlighted_spans(
+    text: &str,
     matched: &std::collections::HashSet<usize>,
-) -> ListItem<'static> {
-    let highlight_style = Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD);
-    let normal_style = Style::default();
-
-    let title = entry.title();
-    let suffix = match entry {
-        Entry::Bookmark { url, .. } => format!(" ({})", url),
-        Entry::App { command, args, .. } => {
-            if args.is_empty() {
-                format!(" ({})", command)
-            } else {
-                format!(" ({} {})", command, args.join(" "))
-            }
-        }
-    };
-
-    let mut spans: Vec<Span<'static>> = Vec::new();
+    highlight_style: Style,
+    normal_style: Style,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
     let mut buf = String::new();
     let mut cur_highlighted = false;
 
-    for (i, c) in title.chars().enumerate() {
+    for (i, c) in text.chars().enumerate() {
         let is_highlighted = matched.contains(&i);
         if is_highlighted != cur_highlighted && !buf.is_empty() {
-            let style = if cur_highlighted {
-                highlight_style
-            } else {
-                normal_style
-            };
+            let style = if cur_highlighted { highlight_style } else { normal_style };
             spans.push(Span::styled(buf.clone(), style));
             buf.clear();
         }
@@ -55,14 +36,43 @@ fn build_highlighted_item(
         buf.push(c);
     }
     if !buf.is_empty() {
-        let style = if cur_highlighted {
-            highlight_style
-        } else {
-            normal_style
-        };
+        let style = if cur_highlighted { highlight_style } else { normal_style };
         spans.push(Span::styled(buf, style));
     }
-    spans.push(Span::raw(suffix));
+    spans
+}
+
+fn build_highlighted_item(
+    entry: &Entry,
+    title_matched: &std::collections::HashSet<usize>,
+    secondary_matched: &std::collections::HashSet<usize>,
+) -> ListItem<'static> {
+    let highlight_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let normal_style = Style::default();
+    let count_style = Style::default().fg(Color::Cyan);
+
+    let count_prefix = format!("{:>4} ", entry.access_count());
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(count_prefix, count_style)];
+
+    spans.extend(highlighted_spans(entry.title(), title_matched, highlight_style, normal_style));
+
+    let (secondary_text, args_suffix) = match entry {
+        Entry::Bookmark { url, .. } => (url.as_str(), String::new()),
+        Entry::App { command, args, .. } => {
+            let suffix = if args.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", args.join(" "))
+            };
+            (command.as_str(), suffix)
+        }
+    };
+
+    spans.push(Span::raw(" ("));
+    spans.extend(highlighted_spans(secondary_text, secondary_matched, highlight_style, normal_style));
+    spans.push(Span::raw(format!("{args_suffix})")));
 
     ListItem::new(Line::from(spans))
 }
@@ -82,11 +92,13 @@ mod tests {
         }
     }
 
+    // count prefix is 5 chars ("   0 "), so title starts at x=5
+
     #[test]
     fn no_matched_chars_renders_no_yellow() {
         let entry = bookmark_entry("GitHub");
         let matched: HashSet<usize> = HashSet::new();
-        let item = build_highlighted_item(&entry, &matched);
+        let item = build_highlighted_item(&entry, &matched, &HashSet::new());
 
         let backend = TestBackend::new(30, 1);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -98,7 +110,8 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer().clone();
-        for x in 0..6u16 {
+        // title "GitHub" occupies x=5..11
+        for x in 5..11u16 {
             assert_ne!(
                 buffer.get(x, 0).fg,
                 Color::Yellow,
@@ -112,7 +125,7 @@ mod tests {
     fn matched_chars_are_rendered_yellow() {
         let entry = bookmark_entry("GitHub");
         let matched: HashSet<usize> = [0, 3].into_iter().collect(); // G, H
-        let item = build_highlighted_item(&entry, &matched);
+        let item = build_highlighted_item(&entry, &matched, &HashSet::new());
 
         let backend = TestBackend::new(30, 1);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -124,33 +137,18 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer().clone();
-        assert_eq!(
-            buffer.get(0, 0).fg,
-            Color::Yellow,
-            "'G' at x=0 should be Yellow"
-        );
-        assert_eq!(
-            buffer.get(3, 0).fg,
-            Color::Yellow,
-            "'H' at x=3 should be Yellow"
-        );
-        assert_ne!(
-            buffer.get(1, 0).fg,
-            Color::Yellow,
-            "'i' at x=1 should not be Yellow"
-        );
-        assert_ne!(
-            buffer.get(2, 0).fg,
-            Color::Yellow,
-            "'t' at x=2 should not be Yellow"
-        );
+        // title starts at x=5: G(5) i(6) t(7) H(8) u(9) b(10)
+        assert_eq!(buffer.get(5, 0).fg, Color::Yellow, "'G' at x=5 should be Yellow");
+        assert_eq!(buffer.get(8, 0).fg, Color::Yellow, "'H' at x=8 should be Yellow");
+        assert_ne!(buffer.get(6, 0).fg, Color::Yellow, "'i' at x=6 should not be Yellow");
+        assert_ne!(buffer.get(7, 0).fg, Color::Yellow, "'t' at x=7 should not be Yellow");
     }
 
     #[test]
-    fn suffix_is_not_yellow() {
+    fn suffix_separator_is_not_yellow() {
         let entry = bookmark_entry("Go");
         let matched: HashSet<usize> = [0, 1].into_iter().collect(); // both chars matched
-        let item = build_highlighted_item(&entry, &matched);
+        let item = build_highlighted_item(&entry, &matched, &HashSet::new());
 
         let backend = TestBackend::new(40, 1);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -162,12 +160,12 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer().clone();
-        // suffix " (https://example.com)" starts at x=2
-        // x=2 is ' ' (space before paren) — should not be yellow
+        // "Go" is at x=5,6; " (" separator at x=7,8; URL starts at x=9
+        // separator should not be yellow (secondary_matched is empty)
         assert_ne!(
-            buffer.get(2, 0).fg,
+            buffer.get(7, 0).fg,
             Color::Yellow,
-            "suffix space should not be yellow"
+            "suffix separator should not be yellow"
         );
     }
 }
@@ -223,17 +221,25 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 .iter()
                 .filter_map(|idx| app.bookmarks().get(*idx))
                 .map(|entry| {
-                    let positions: std::collections::HashSet<usize> = app
+                    let title_positions: std::collections::HashSet<usize> = app
                         .match_char_positions(entry.title(), app.query())
                         .into_iter()
                         .collect();
-                    build_highlighted_item(entry, &positions)
+                    let secondary_positions: std::collections::HashSet<usize> = app
+                        .match_secondary_positions(entry, app.query())
+                        .into_iter()
+                        .collect();
+                    build_highlighted_item(entry, &title_positions, &secondary_positions)
                 })
                 .collect();
 
             let list = List::new(items)
                 .block(Block::default().borders(Borders::ALL).title("Bookmarks"))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+                .highlight_style(
+                    Style::default()
+                        .bg(Color::Rgb(60, 60, 60))
+                        .add_modifier(Modifier::BOLD),
+                );
 
             let mut state = ratatui::widgets::ListState::default();
             if filtered_indices.is_empty() {
@@ -266,6 +272,16 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                         selected = 0;
                         continue;
                     }
+                    KeyCode::Char('p') => {
+                        selected = selected.saturating_sub(1);
+                        continue;
+                    }
+                    KeyCode::Char('n') => {
+                        if selected + 1 < search_results.len() {
+                            selected += 1;
+                        }
+                        continue;
+                    }
                     KeyCode::Char('q') => {
                         // Ctrl+Q to quit
                         break;
@@ -288,10 +304,8 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 KeyCode::Up => {
                     selected = selected.saturating_sub(1);
                 }
-                KeyCode::Down => {
-                    if selected + 1 < search_results.len() {
-                        selected += 1;
-                    }
+                KeyCode::Down if selected + 1 < search_results.len() => {
+                    selected += 1;
                 }
                 KeyCode::Enter => {
                     let query = app.query().trim().to_string();

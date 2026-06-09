@@ -34,6 +34,20 @@ impl Entry {
         }
     }
 
+    pub fn access_count(&self) -> u32 {
+        match self {
+            Entry::Bookmark { access_count, .. } => *access_count,
+            Entry::App { access_count, .. } => *access_count,
+        }
+    }
+
+    pub fn secondary_text(&self) -> &str {
+        match self {
+            Entry::Bookmark { url, .. } => url,
+            Entry::App { command, .. } => command,
+        }
+    }
+
     pub fn access_count_mut(&mut self) -> &mut u32 {
         match self {
             Entry::Bookmark { access_count, .. } => access_count,
@@ -238,23 +252,42 @@ impl App {
     }
 
     pub fn fuzzy_search(&self, query: &str) -> Vec<(usize, i64)> {
+        let bookmarks = self.state.bookmarks();
+
         if query.is_empty() {
-            return (0..self.state.bookmarks().len()).map(|i| (i, 0)).collect();
+            let mut results: Vec<(usize, i64)> =
+                (0..bookmarks.len()).map(|i| (i, 0)).collect();
+            results.sort_by(|a, b| {
+                bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count())
+            });
+            return results;
         }
 
-        let mut results: Vec<(usize, i64)> = self
-            .state
-            .bookmarks()
+        let mut results: Vec<(usize, i64)> = bookmarks
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
-                self.matcher
+                let title_score = self
+                    .matcher
                     .fuzzy(entry.title(), query, false)
-                    .map(|(score, _)| (index, score))
+                    .map(|(s, _)| s);
+                let secondary_score = self
+                    .matcher
+                    .fuzzy(entry.secondary_text(), query, false)
+                    .map(|(s, _)| s);
+                match (title_score, secondary_score) {
+                    (None, None) => None,
+                    (a, b) => Some((index, a.unwrap_or(i64::MIN).max(b.unwrap_or(i64::MIN)))),
+                }
             })
             .collect();
 
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by(|a, b| {
+            bookmarks[b.0]
+                .access_count()
+                .cmp(&bookmarks[a.0].access_count())
+                .then(b.1.cmp(&a.1))
+        });
         results
     }
 
@@ -262,6 +295,13 @@ impl App {
         match self.search_mode {
             SearchMode::Fuzzy => self.fuzzy_match_positions(title, query),
             SearchMode::Migemo => self.migemo_match_positions(title, query),
+        }
+    }
+
+    pub fn match_secondary_positions(&self, entry: &Entry, query: &str) -> Vec<usize> {
+        match self.search_mode {
+            SearchMode::Fuzzy => self.fuzzy_match_positions(entry.secondary_text(), query),
+            SearchMode::Migemo => Vec::new(),
         }
     }
 
@@ -276,8 +316,15 @@ impl App {
     }
 
     fn migemo_search(&self, query: &str) -> Vec<(usize, i64)> {
+        let bookmarks = self.state.bookmarks();
+
         if query.is_empty() {
-            return (0..self.state.bookmarks().len()).map(|i| (i, 0)).collect();
+            let mut results: Vec<(usize, i64)> =
+                (0..bookmarks.len()).map(|i| (i, 0)).collect();
+            results.sort_by(|a, b| {
+                bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count())
+            });
+            return results;
         }
 
         let Some(engine) = &self.migemo else {
@@ -288,8 +335,7 @@ impl App {
             return Vec::new();
         };
 
-        self.state
-            .bookmarks()
+        let mut results: Vec<(usize, i64)> = bookmarks
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
@@ -299,7 +345,12 @@ impl App {
                     None
                 }
             })
-            .collect()
+            .collect();
+
+        results.sort_by(|a, b| {
+            bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count())
+        });
+        results
     }
 
     fn migemo_match_positions(&self, title: &str, query: &str) -> Vec<usize> {
