@@ -1,13 +1,9 @@
 use directories::ProjectDirs;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-#[cfg(feature = "backend-tui")]
 use regex::Regex;
-#[cfg(feature = "backend-tui")]
 use rustmigemo::migemo::compact_dictionary::CompactDictionary;
-#[cfg(feature = "backend-tui")]
 use rustmigemo::migemo::query::query as migemo_query;
-#[cfg(feature = "backend-tui")]
 use rustmigemo::migemo::regex_generator::RegexOperator;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -38,24 +34,6 @@ impl Entry {
         }
     }
 
-    pub fn display(&self) -> String {
-        match self {
-            Entry::Bookmark { title, url, .. } => format!("{} ({})", title, url),
-            Entry::App {
-                title,
-                command,
-                args,
-                ..
-            } => {
-                if args.is_empty() {
-                    format!("{} ({})", title, command)
-                } else {
-                    format!("{} ({} {})", title, command, args.join(" "))
-                }
-            }
-        }
-    }
-
     pub fn access_count_mut(&mut self) -> &mut u32 {
         match self {
             Entry::Bookmark { access_count, .. } => access_count,
@@ -73,7 +51,6 @@ pub struct BookmarkFile {
 pub fn data_file_path() -> PathBuf {
     if let Some(proj) = ProjectDirs::from("com", "onah", "bookmark_launcher") {
         let dir = proj.data_dir();
-        // ignore error if directory already exists or cannot be created
         let _ = std::fs::create_dir_all(dir);
         dir.join("bookmarks.toml")
     } else {
@@ -81,7 +58,6 @@ pub fn data_file_path() -> PathBuf {
     }
 }
 
-#[cfg(feature = "backend-tui")]
 pub fn migemo_dict_path() -> PathBuf {
     data_file_path().with_file_name("migemo-compact-dict")
 }
@@ -176,19 +152,16 @@ impl AppState {
     }
 }
 
-#[cfg(feature = "backend-tui")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SearchMode {
     Fuzzy,
     Migemo,
 }
 
-#[cfg(feature = "backend-tui")]
 struct MigemoEngine {
     dictionary: CompactDictionary,
 }
 
-#[cfg(feature = "backend-tui")]
 impl MigemoEngine {
     fn load() -> Option<Self> {
         let dict_path = migemo_dict_path();
@@ -211,9 +184,7 @@ pub struct App {
     query: String,
     state: AppState,
     matcher: SkimMatcherV2,
-    #[cfg(feature = "backend-tui")]
     search_mode: SearchMode,
-    #[cfg(feature = "backend-tui")]
     migemo: Option<MigemoEngine>,
 }
 
@@ -223,9 +194,7 @@ impl App {
             query: String::new(),
             state: AppState::new(bookmarks),
             matcher: SkimMatcherV2::default(),
-            #[cfg(feature = "backend-tui")]
             search_mode: SearchMode::Fuzzy,
-            #[cfg(feature = "backend-tui")]
             migemo: MigemoEngine::load(),
         }
     }
@@ -242,17 +211,14 @@ impl App {
         self.state.bookmarks()
     }
 
-    #[cfg(feature = "backend-tui")]
     pub fn search_mode(&self) -> SearchMode {
         self.search_mode
     }
 
-    #[cfg(feature = "backend-tui")]
     pub fn set_search_mode(&mut self, mode: SearchMode) {
         self.search_mode = mode;
     }
 
-    #[cfg(feature = "backend-tui")]
     pub fn search_mode_label(&self) -> &'static str {
         match self.search_mode {
             SearchMode::Fuzzy => "Fuzzy",
@@ -260,12 +226,10 @@ impl App {
         }
     }
 
-    #[cfg(feature = "backend-tui")]
     pub fn is_migemo_ready(&self) -> bool {
         self.migemo.is_some()
     }
 
-    #[cfg(feature = "backend-tui")]
     pub fn search(&self, query: &str) -> Vec<(usize, i64)> {
         match self.search_mode {
             SearchMode::Fuzzy => self.fuzzy_search(query),
@@ -294,18 +258,10 @@ impl App {
         results
     }
 
-    /// Returns the char indices (into `title`) that contributed to the match.
     pub fn match_char_positions(&self, title: &str, query: &str) -> Vec<usize> {
-        #[cfg(feature = "backend-tui")]
-        {
-            match self.search_mode {
-                SearchMode::Fuzzy => self.fuzzy_match_positions(title, query),
-                SearchMode::Migemo => self.migemo_match_positions(title, query),
-            }
-        }
-        #[cfg(not(feature = "backend-tui"))]
-        {
-            self.fuzzy_match_positions(title, query)
+        match self.search_mode {
+            SearchMode::Fuzzy => self.fuzzy_match_positions(title, query),
+            SearchMode::Migemo => self.migemo_match_positions(title, query),
         }
     }
 
@@ -319,7 +275,6 @@ impl App {
             .unwrap_or_default()
     }
 
-    #[cfg(feature = "backend-tui")]
     fn migemo_search(&self, query: &str) -> Vec<(usize, i64)> {
         if query.is_empty() {
             return (0..self.state.bookmarks().len()).map(|i| (i, 0)).collect();
@@ -347,7 +302,6 @@ impl App {
             .collect()
     }
 
-    #[cfg(feature = "backend-tui")]
     fn migemo_match_positions(&self, title: &str, query: &str) -> Vec<usize> {
         if query.is_empty() {
             return Vec::new();
@@ -406,7 +360,6 @@ mod highlight_tests {
 
     #[test]
     fn positions_agree_with_search() {
-        // Tests that match_char_positions is non-empty exactly when fuzzy_search finds a hit.
         let app = App::new(vec![bookmark("GitHub")]);
         let query = "gh";
         let search_found_match = !app.fuzzy_search(query).is_empty();
@@ -434,7 +387,7 @@ mod highlight_tests {
     }
 }
 
-#[cfg(all(test, feature = "backend-tui"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

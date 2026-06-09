@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = { version = "0.33", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 open = "5.0"
@@ -14,16 +13,5 @@ fuzzy-matcher = "0.3"
 directories = "4.0"
 regex = "1"
 rustmigemo = { git = "https://github.com/oguna/rustmigemo", branch = "master" }
-[features]
-# Default path is TUI. Keep eframe as an optional fallback backend.
-default = ["backend-tui"]
-backend-eframe = ["eframe"]
-backend-tui = ["ratatui", "crossterm"]
-
-[dependencies.ratatui]
-version = "0.24"
-optional = true
-
-[dependencies.crossterm]
-version = "0.27"
-optional = true
+ratatui = "0.24"
+crossterm = "0.27"
