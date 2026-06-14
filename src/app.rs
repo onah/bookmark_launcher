@@ -110,6 +110,17 @@ impl AppState {
         Ok(())
     }
 
+    pub fn delete_bookmark_by_index(
+        &mut self,
+        index: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if index < self.bookmarks.len() {
+            self.bookmarks.remove(index);
+            self.save_bookmarks()?;
+        }
+        Ok(())
+    }
+
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
         if self.bookmarks.iter().any(|b| match b {
             Entry::Bookmark { url: u, .. } => u == &url,
@@ -172,6 +183,12 @@ pub enum SearchMode {
     Migemo,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortMode {
+    ByCount,
+    ByScore,
+}
+
 struct MigemoEngine {
     dictionary: CompactDictionary,
 }
@@ -199,6 +216,7 @@ pub struct App {
     state: AppState,
     matcher: SkimMatcherV2,
     search_mode: SearchMode,
+    sort_mode: SortMode,
     migemo: Option<MigemoEngine>,
 }
 
@@ -209,6 +227,7 @@ impl App {
             state: AppState::new(bookmarks),
             matcher: SkimMatcherV2::default(),
             search_mode: SearchMode::Fuzzy,
+            sort_mode: SortMode::ByScore,
             migemo: MigemoEngine::load(),
         }
     }
@@ -237,6 +256,20 @@ impl App {
         match self.search_mode {
             SearchMode::Fuzzy => "Fuzzy",
             SearchMode::Migemo => "Migemo",
+        }
+    }
+
+    pub fn toggle_sort_mode(&mut self) {
+        self.sort_mode = match self.sort_mode {
+            SortMode::ByCount => SortMode::ByScore,
+            SortMode::ByScore => SortMode::ByCount,
+        };
+    }
+
+    pub fn sort_mode_label(&self) -> &'static str {
+        match self.sort_mode {
+            SortMode::ByCount => "Count",
+            SortMode::ByScore => "Score",
         }
     }
 
@@ -282,11 +315,14 @@ impl App {
             })
             .collect();
 
-        results.sort_by(|a, b| {
-            bookmarks[b.0]
+        results.sort_by(|a, b| match self.sort_mode {
+            SortMode::ByCount => bookmarks[b.0]
                 .access_count()
                 .cmp(&bookmarks[a.0].access_count())
-                .then(b.1.cmp(&a.1))
+                .then(b.1.cmp(&a.1)),
+            SortMode::ByScore => b.1
+                .cmp(&a.1)
+                .then(bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count())),
         });
         results
     }
@@ -382,6 +418,13 @@ impl App {
 
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
         self.state.add_bookmark(url)
+    }
+
+    pub fn delete_bookmark_by_index(
+        &mut self,
+        index: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.state.delete_bookmark_by_index(index)
     }
 }
 

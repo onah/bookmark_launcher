@@ -7,10 +7,10 @@ use crossterm::terminal::{
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use std::error::Error;
 use std::io;
 use std::time::Duration;
@@ -170,6 +170,17 @@ mod tests {
     }
 }
 
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    Rect {
+        x,
+        y,
+        width: width.min(area.width),
+        height: height.min(area.height),
+    }
+}
+
 pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
     // initialize app state
     let mut app = App::new(bookmarks);
@@ -182,6 +193,7 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut selected: usize = 0;
+    let mut confirm_delete_idx: Option<usize> = None;
     // drain any pending events before starting
     while event::poll(Duration::from_millis(0))? {
         let _ = event::read()?;
@@ -211,8 +223,13 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
             } else {
                 app.search_mode_label()
             };
+            let sort_label = if app.search_mode() == SearchMode::Fuzzy {
+                app.sort_mode_label()
+            } else {
+                "Count"
+            };
 
-            let input_title = format!("Query [{}]", mode_label);
+            let input_title = format!("Query [{} | {}]", mode_label, sort_label);
             let input = Paragraph::new(app.query())
                 .block(Block::default().borders(Borders::ALL).title(input_title));
             f.render_widget(input, chunks[0]);
@@ -249,6 +266,36 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
             }
 
             f.render_stateful_widget(list, chunks[1], &mut state);
+
+            if let Some(del_idx) = confirm_delete_idx {
+                let title = app
+                    .bookmarks()
+                    .get(del_idx)
+                    .map(|e| e.title().to_string())
+                    .unwrap_or_default();
+                let popup_area = centered_rect(50, 7, size);
+                let text = vec![
+                    Line::raw(""),
+                    Line::styled(
+                        format!("Delete \"{}\"?", title),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Line::raw(""),
+                    Line::raw("[y] Delete    [n / Esc] Cancel"),
+                    Line::raw(""),
+                ];
+                let popup = Paragraph::new(text)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title("Confirm")
+                            .style(Style::default().bg(Color::DarkGray)),
+                    )
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: false });
+                f.render_widget(Clear, popup_area);
+                f.render_widget(popup, popup_area);
+            }
         })?;
 
         // input
@@ -256,6 +303,23 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
             && let CEvent::Key(key) = event::read()?
         {
             if key.kind != KeyEventKind::Press {
+                continue;
+            }
+
+            // confirm-delete popup handling
+            if confirm_delete_idx.is_some() {
+                match key.code {
+                    KeyCode::Char('y') => {
+                        if let Some(del_idx) = confirm_delete_idx.take() {
+                            let _ = app.delete_bookmark_by_index(del_idx);
+                            break;
+                        }
+                    }
+                    KeyCode::Char('n') | KeyCode::Esc => {
+                        confirm_delete_idx = None;
+                    }
+                    _ => {}
+                }
                 continue;
             }
 
@@ -282,9 +346,19 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                         }
                         continue;
                     }
+                    KeyCode::Char('s') => {
+                        app.toggle_sort_mode();
+                        selected = 0;
+                        continue;
+                    }
                     KeyCode::Char('q') => {
                         // Ctrl+Q to quit
                         break;
+                    }
+                    KeyCode::Char('d') => {
+                        if let Some((real_idx, _)) = search_results.get(selected) {
+                            confirm_delete_idx = Some(*real_idx);
+                        }
                     }
                     _ => {}
                 }
