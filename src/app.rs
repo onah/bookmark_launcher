@@ -9,6 +9,9 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
+use std::thread;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -190,15 +193,17 @@ pub enum SortMode {
 }
 
 struct MigemoEngine {
+    bytes: Arc<Vec<u8>>,
     dictionary: CompactDictionary,
 }
 
 impl MigemoEngine {
     fn load() -> Option<Self> {
-        let dict_path = migemo_dict_path();
-        let bytes = fs::read(dict_path).ok()?;
+        let bytes = fs::read(migemo_dict_path()).ok()?;
+        let dictionary = CompactDictionary::new(&bytes);
         Some(Self {
-            dictionary: CompactDictionary::new(&bytes),
+            bytes: Arc::new(bytes),
+            dictionary,
         })
     }
 
@@ -407,6 +412,52 @@ impl App {
             .filter(|(_, (byte_pos, _))| ranges.iter().any(|r| r.contains(byte_pos)))
             .map(|(char_idx, _)| char_idx)
             .collect()
+    }
+
+    pub fn start_migemo_search(
+        &self,
+        query: &str,
+        cancel: Arc<AtomicBool>,
+    ) -> Option<mpsc::Receiver<Vec<(usize, i64)>>> {
+        let engine = self.migemo.as_ref()?;
+        let bytes = Arc::clone(&engine.bytes);
+        let bookmarks: Vec<(String, u32)> = self
+            .state
+            .bookmarks()
+            .iter()
+            .map(|e| (e.title().to_string(), e.access_count()))
+            .collect();
+        let query = query.to_string();
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let dict = CompactDictionary::new(&bytes);
+            let pattern = migemo_query(query, &dict, &RegexOperator::Default);
+            if pattern.is_empty() {
+                let _ = tx.send(vec![]);
+                return;
+            }
+            let regex = match Regex::new(&pattern) {
+                Ok(r) => r,
+                Err(_) => {
+                    let _ = tx.send(vec![]);
+                    return;
+                }
+            };
+            let mut results = vec![];
+            for (i, (title, _)) in bookmarks.iter().enumerate() {
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+                if regex.is_match(title) {
+                    results.push((i, 0i64));
+                }
+            }
+            results.sort_by(|a, b| bookmarks[b.0].1.cmp(&bookmarks[a.0].1));
+            let _ = tx.send(results);
+        });
+
+        Some(rx)
     }
 
     pub fn increment_access_count_by_index(

@@ -13,7 +13,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use std::error::Error;
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
+
+struct PendingSearch {
+    cancel: Arc<AtomicBool>,
+    rx: mpsc::Receiver<Vec<(usize, i64)>>,
+}
 
 fn highlighted_spans(
     text: &str,
@@ -199,9 +206,57 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
         let _ = event::read()?;
     }
 
+    let mut search_results: Vec<(usize, i64)> = app.search(app.query());
+    let mut pending: Option<PendingSearch> = None;
+    let mut searched_query = app.query().to_string();
+    let mut searched_mode = app.search_mode();
+
     loop {
-        // compute search results once per iteration
-        let search_results = app.search(app.query());
+        // Trigger new search when query or mode changed
+        {
+            let q = app.query().to_string();
+            let m = app.search_mode();
+            if q != searched_query || m != searched_mode {
+                if let Some(ref p) = pending {
+                    p.cancel.store(true, Ordering::Relaxed);
+                }
+                pending = None;
+                match m {
+                    SearchMode::Fuzzy => {
+                        search_results = app.search(&q);
+                    }
+                    SearchMode::Migemo if q.is_empty() => {
+                        search_results = app.search(&q);
+                    }
+                    SearchMode::Migemo => {
+                        let cancel = Arc::new(AtomicBool::new(false));
+                        if let Some(rx) = app.start_migemo_search(&q, Arc::clone(&cancel)) {
+                            search_results = vec![];
+                            pending = Some(PendingSearch { cancel, rx });
+                        } else {
+                            search_results = vec![];
+                        }
+                    }
+                }
+                searched_query = q;
+                searched_mode = m;
+            }
+        }
+
+        // Receive completed async search results
+        if let Some(ref p) = pending {
+            match p.rx.try_recv() {
+                Ok(results) => {
+                    search_results = results;
+                    pending = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    pending = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+
         let filtered_indices: Vec<usize> = search_results.iter().map(|(i, _)| *i).collect();
 
         // clamp selected before drawing
@@ -298,8 +353,13 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
             }
         })?;
 
-        // input
-        if event::poll(Duration::from_millis(50))?
+        // input — shorter timeout while search is in flight for snappier result display
+        let poll_timeout = if pending.is_some() {
+            Duration::from_millis(10)
+        } else {
+            Duration::from_millis(50)
+        };
+        if event::poll(poll_timeout)?
             && let CEvent::Key(key) = event::read()?
         {
             if key.kind != KeyEventKind::Press {
