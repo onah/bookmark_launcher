@@ -201,6 +201,7 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
 
     let mut selected: usize = 0;
     let mut confirm_delete_idx: Option<usize> = None;
+    let mut show_help = false;
     // drain any pending events before starting
     while event::poll(Duration::from_millis(0))? {
         let _ = event::read()?;
@@ -351,6 +352,36 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 f.render_widget(Clear, popup_area);
                 f.render_widget(popup, popup_area);
             }
+
+            if show_help {
+                let popup_area = centered_rect(46, 15, size);
+                let text = vec![
+                    Line::raw(""),
+                    Line::raw("Ctrl+F : Fuzzy検索モード"),
+                    Line::raw("Ctrl+T : Migemo検索モード"),
+                    Line::raw("Ctrl+S : ソート切替"),
+                    Line::raw("Ctrl+P : 選択を上に移動"),
+                    Line::raw("Ctrl+N : 選択を下に移動"),
+                    Line::raw("Ctrl+D : 選択項目を削除"),
+                    Line::raw("Ctrl+Q : 終了"),
+                    Line::raw("Ctrl+H : このヘルプを表示"),
+                    Line::raw("Enter  : 開く / ブックマーク追加"),
+                    Line::raw("Esc    : 終了"),
+                    Line::raw(""),
+                    Line::raw("何かキーを押すと閉じます"),
+                ];
+                let popup = Paragraph::new(text)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title("Help")
+                            .style(Style::default().bg(Color::DarkGray)),
+                    )
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: false });
+                f.render_widget(Clear, popup_area);
+                f.render_widget(popup, popup_area);
+            }
         })?;
 
         // input — shorter timeout while search is in flight for snappier result display
@@ -380,6 +411,12 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                     }
                     _ => {}
                 }
+                continue;
+            }
+
+            // any key closes the help popup
+            if show_help {
+                show_help = false;
                 continue;
             }
 
@@ -419,6 +456,10 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                         if let Some((real_idx, _)) = search_results.get(selected) {
                             confirm_delete_idx = Some(*real_idx);
                         }
+                    }
+                    KeyCode::Char('h') => {
+                        show_help = true;
+                        continue;
                     }
                     _ => {}
                 }
