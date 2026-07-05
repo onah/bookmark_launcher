@@ -1,17 +1,11 @@
+use crate::migemo::{MigemoSearcher, SkkDictionary};
 use directories::ProjectDirs;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use regex::Regex;
-use rustmigemo::migemo::compact_dictionary::CompactDictionary;
-use rustmigemo::migemo::query::query as migemo_query;
-use rustmigemo::migemo::regex_generator::RegexOperator;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
-use std::thread;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -75,8 +69,8 @@ pub fn data_file_path() -> PathBuf {
     }
 }
 
-pub fn migemo_dict_path() -> PathBuf {
-    data_file_path().with_file_name("migemo-compact-dict")
+pub fn skk_dictionary_path() -> PathBuf {
+    data_file_path().with_file_name("SKK-JISYO.L")
 }
 
 pub struct AppState {
@@ -192,28 +186,14 @@ pub enum SortMode {
     ByScore,
 }
 
-struct MigemoEngine {
-    bytes: Arc<Vec<u8>>,
-    dictionary: CompactDictionary,
-}
-
-impl MigemoEngine {
-    fn load() -> Option<Self> {
-        let bytes = fs::read(migemo_dict_path()).ok()?;
-        let dictionary = CompactDictionary::new(&bytes);
-        Some(Self {
-            bytes: Arc::new(bytes),
-            dictionary,
-        })
+fn build_migemo_searcher(bookmarks: &[Entry]) -> Option<MigemoSearcher> {
+    let bytes = fs::read(skk_dictionary_path()).ok()?;
+    let dictionary = SkkDictionary::from_bytes(&bytes);
+    let mut searcher = MigemoSearcher::new(dictionary);
+    for entry in bookmarks {
+        searcher.add_item(entry.title());
     }
-
-    fn build_regex(&self, query: &str) -> Option<Regex> {
-        let pattern = migemo_query(query.to_string(), &self.dictionary, &RegexOperator::Default);
-        if pattern.is_empty() {
-            return None;
-        }
-        Regex::new(&pattern).ok()
-    }
+    Some(searcher)
 }
 
 pub struct App {
@@ -222,18 +202,19 @@ pub struct App {
     matcher: SkimMatcherV2,
     search_mode: SearchMode,
     sort_mode: SortMode,
-    migemo: Option<MigemoEngine>,
+    migemo: Option<MigemoSearcher>,
 }
 
 impl App {
     pub fn new(bookmarks: Vec<Entry>) -> Self {
+        let migemo = build_migemo_searcher(&bookmarks);
         Self {
             query: String::new(),
             state: AppState::new(bookmarks),
             matcher: SkimMatcherV2::default(),
             search_mode: SearchMode::Fuzzy,
             sort_mode: SortMode::ByScore,
-            migemo: MigemoEngine::load(),
+            migemo,
         }
     }
 
@@ -372,20 +353,10 @@ impl App {
             return Vec::new();
         };
 
-        let Some(regex) = engine.build_regex(query) else {
-            return Vec::new();
-        };
-
-        let mut results: Vec<(usize, i64)> = bookmarks
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                if regex.is_match(entry.title()) {
-                    Some((index, 0))
-                } else {
-                    None
-                }
-            })
+        let mut results: Vec<(usize, i64)> = engine
+            .search(query)
+            .into_iter()
+            .map(|r| (r.index, 0i64))
             .collect();
 
         results.sort_by(|a, b| {
@@ -401,63 +372,7 @@ impl App {
         let Some(engine) = &self.migemo else {
             return Vec::new();
         };
-        let Some(regex) = engine.build_regex(query) else {
-            return Vec::new();
-        };
-        let ranges: Vec<std::ops::Range<usize>> =
-            regex.find_iter(title).map(|m| m.start()..m.end()).collect();
-        title
-            .char_indices()
-            .enumerate()
-            .filter(|(_, (byte_pos, _))| ranges.iter().any(|r| r.contains(byte_pos)))
-            .map(|(char_idx, _)| char_idx)
-            .collect()
-    }
-
-    pub fn start_migemo_search(
-        &self,
-        query: &str,
-        cancel: Arc<AtomicBool>,
-    ) -> Option<mpsc::Receiver<Vec<(usize, i64)>>> {
-        let engine = self.migemo.as_ref()?;
-        let bytes = Arc::clone(&engine.bytes);
-        let bookmarks: Vec<(String, u32)> = self
-            .state
-            .bookmarks()
-            .iter()
-            .map(|e| (e.title().to_string(), e.access_count()))
-            .collect();
-        let query = query.to_string();
-        let (tx, rx) = mpsc::channel();
-
-        thread::spawn(move || {
-            let dict = CompactDictionary::new(&bytes);
-            let pattern = migemo_query(query, &dict, &RegexOperator::Default);
-            if pattern.is_empty() {
-                let _ = tx.send(vec![]);
-                return;
-            }
-            let regex = match Regex::new(&pattern) {
-                Ok(r) => r,
-                Err(_) => {
-                    let _ = tx.send(vec![]);
-                    return;
-                }
-            };
-            let mut results = vec![];
-            for (i, (title, _)) in bookmarks.iter().enumerate() {
-                if cancel.load(Ordering::Relaxed) {
-                    return;
-                }
-                if regex.is_match(title) {
-                    results.push((i, 0i64));
-                }
-            }
-            results.sort_by(|a, b| bookmarks[b.0].1.cmp(&bookmarks[a.0].1));
-            let _ = tx.send(results);
-        });
-
-        Some(rx)
+        engine.highlight(title, query)
     }
 
     pub fn increment_access_count_by_index(
@@ -468,14 +383,28 @@ impl App {
     }
 
     pub fn add_bookmark(&mut self, url: String) -> Result<(), Box<dyn std::error::Error>> {
-        self.state.add_bookmark(url)
+        let count_before = self.state.bookmarks().len();
+        self.state.add_bookmark(url)?;
+        if self.state.bookmarks().len() > count_before
+            && let Some(entry) = self.state.bookmarks().last()
+        {
+            let title = entry.title().to_string();
+            if let Some(engine) = &mut self.migemo {
+                engine.add_item(&title);
+            }
+        }
+        Ok(())
     }
 
     pub fn delete_bookmark_by_index(
         &mut self,
         index: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.state.delete_bookmark_by_index(index)
+        self.state.delete_bookmark_by_index(index)?;
+        if let Some(engine) = &mut self.migemo {
+            engine.remove_item(index);
+        }
+        Ok(())
     }
 }
 
@@ -545,20 +474,41 @@ mod tests {
     }
 
     #[test]
-    fn migemo_mode_jin_does_not_hit_jinji() {
-        let mut app = App::new(vec![bookmark("人事")]);
+    fn migemo_mode_gen_hits_kanji_with_multi_mora_reading() {
+        // This is the exact bug docs/migemo_ja.md rewrites the engine to fix:
+        // a regex-alternation migemo can't match multi-mora romaji ("gen")
+        // against kanji, only single-mora ("ge"). The new mora-index engine
+        // can, so "gen" must hit "言".
+        let mut app = App::new(vec![bookmark("言")]);
         assert!(
             app.is_migemo_ready(),
             "Migemo dictionary is not loaded at {}",
-            migemo_dict_path().display()
+            skk_dictionary_path().display()
         );
+
+        app.set_search_mode(SearchMode::Migemo);
+        let results = app.search("gen");
+
+        assert!(
+            !results.is_empty(),
+            "Expected 'gen' to hit '言' (reading げん), got: {:?}",
+            results
+        );
+    }
+
+    #[test]
+    fn migemo_mode_jin_hits_jinji_via_kanji_reading() {
+        // 人 alone is read じん (jin), and 人事 is read じんじ (jinji), so "jin"
+        // is a genuine prefix match, not a false positive.
+        let mut app = App::new(vec![bookmark("人事")]);
+        assert!(app.is_migemo_ready());
 
         app.set_search_mode(SearchMode::Migemo);
         let results = app.search("jin");
 
         assert!(
-            results.is_empty(),
-            "Expected no hit for query 'jin' against '人事', got: {:?}",
+            !results.is_empty(),
+            "Expected 'jin' to hit '人事' (reading じんじ), got: {:?}",
             results
         );
     }

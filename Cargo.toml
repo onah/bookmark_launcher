@@ -11,7 +11,6 @@ reqwest = { version = "0.12", features = ["blocking"] }
 scraper = "0.19"
 fuzzy-matcher = "0.3"
 directories = "4.0"
-regex = "1"
-rustmigemo = { git = "https://github.com/oguna/rustmigemo", branch = "master" }
+encoding_rs = "0.8"
 ratatui = "0.24"
 crossterm = "0.27"

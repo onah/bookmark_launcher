@@ -1,4 +1,5 @@
 mod app;
+mod migemo;
 mod ui;
 
 use std::fs;

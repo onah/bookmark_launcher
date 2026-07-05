@@ -55,15 +55,15 @@ In migemo mode, romaji input can match Japanese text (for example, `puro` can ma
 
 ### Migemo dictionary location
 
-Place `migemo-compact-dict` in the same data directory as `bookmarks.toml`.
+Place `SKK-JISYO.L` (EUC-JP encoded) in the same data directory as `bookmarks.toml`.
 
 On macOS, this is typically under:
 
-- `~/Library/Application Support/com/onah/bookmark_launcher/`
+- `~/Library/Application Support/com.onah.bookmark_launcher/`
 
 You can download the dictionary from:
 
-- `https://github.com/oguna/migemo-compact-dict-latest`
+- `https://github.com/skk-dev/dict/blob/master/SKK-JISYO.L`
 
 ### Backend selection
 
