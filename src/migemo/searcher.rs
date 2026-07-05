@@ -51,8 +51,10 @@ struct IndexedItem {
     segments: Vec<Segment>,
 }
 
-/// A search hit: the index the item was registered at (via `add_item`), and
-/// the char positions in its text that should be highlighted.
+/// A search hit: the index the item was registered at (via `add_item`), the
+/// char positions in its text that should be highlighted, and a relevance
+/// score (higher is better) usable for ranking and for fusing with other
+/// search signals (see `App::combined_search`).
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     pub index: usize,
@@ -61,6 +63,22 @@ pub struct SearchResult {
     // flow, are free to ignore it.
     #[allow(dead_code)]
     pub highlight: Vec<usize>,
+    pub score: i64,
+}
+
+/// The outcome of matching an item against a query: highlight positions plus
+/// a relevance score. Longer matches and matches closer to the start of the
+/// text score higher, mirroring the ordering fuzzy_matcher's `SkimMatcherV2`
+/// already favors, so the two signals stay comparable after normalization.
+struct MatchOutcome {
+    positions: Vec<usize>,
+    score: i64,
+}
+
+fn score_match(matched_len: usize, start: usize, total_len: usize) -> i64 {
+    let matched_len = matched_len as i64;
+    let earliness = (total_len as i64 - start as i64).max(0);
+    matched_len * 100 + earliness
 }
 
 /// Romaji-mora index search engine. Text registered via `add_item` has its
@@ -165,7 +183,9 @@ impl MigemoSearcher {
         let item = self.build_item(text);
         let query_morae = query_to_morae(query);
         let query_lower = query.to_lowercase();
-        match_item(&item, &query_morae, &query_lower).unwrap_or_default()
+        match_item(&item, &query_morae, &query_lower)
+            .map(|outcome| outcome.positions)
+            .unwrap_or_default()
     }
 
     /// Drop the item registered at `index`, shifting later indices down by
@@ -188,23 +208,40 @@ impl MigemoSearcher {
             .iter()
             .enumerate()
             .filter_map(|(index, item)| {
-                match_item(item, &query_morae, &query_lower)
-                    .map(|highlight| SearchResult { index, highlight })
+                match_item(item, &query_morae, &query_lower).map(|outcome| SearchResult {
+                    index,
+                    highlight: outcome.positions,
+                    score: outcome.score,
+                })
             })
             .collect()
     }
 }
 
 /// Match a single already-indexed item against a decomposed query, returning
-/// its highlight positions on a hit. Shared by `search` (over stored items)
-/// and `highlight` (over a freshly-built, unstored item).
-fn match_item(item: &IndexedItem, query_morae: &[String], query_lower: &str) -> Option<Vec<usize>> {
+/// its highlight positions and a relevance score on a hit. Shared by
+/// `search` (over stored items) and `highlight` (over a freshly-built,
+/// unstored item).
+fn match_item(
+    item: &IndexedItem,
+    query_morae: &[String],
+    query_lower: &str,
+) -> Option<MatchOutcome> {
     if let Some(start) = find_mora_window(&item.morae, query_morae) {
-        return Some(highlight_positions(item, start, start + query_morae.len()));
+        let end = start + query_morae.len();
+        return Some(MatchOutcome {
+            positions: highlight_positions(item, start, end),
+            score: score_match(query_morae.len(), start, item.morae.len()),
+        });
     }
 
     if !query_lower.is_empty() && item.text.to_lowercase().contains(query_lower) {
-        return Some(plain_highlight_positions(item, query_lower));
+        let query_len = query_lower.chars().count();
+        let start = plain_match_start(item, query_lower)?;
+        return Some(MatchOutcome {
+            positions: plain_highlight_positions(item, query_lower),
+            score: score_match(query_len, start, item.text.chars().count()),
+        });
     }
 
     None
@@ -233,20 +270,22 @@ fn highlight_positions(item: &IndexedItem, mora_start: usize, mora_end: usize) -
     positions
 }
 
-fn plain_highlight_positions(item: &IndexedItem, query_lower: &str) -> Vec<usize> {
+fn plain_match_start(item: &IndexedItem, query_lower: &str) -> Option<usize> {
     let lower_chars: Vec<char> = item.text.to_lowercase().chars().collect();
     let query_chars: Vec<char> = query_lower.chars().collect();
     if query_chars.is_empty() || query_chars.len() > lower_chars.len() {
-        return Vec::new();
+        return None;
     }
-    let text_len = item.text.chars().count();
-    match lower_chars
+    lower_chars
         .windows(query_chars.len())
         .position(|w| w == query_chars)
-    {
-        Some(start) => (start..start + query_chars.len())
-            .filter(|&i| i < text_len)
-            .collect(),
+}
+
+fn plain_highlight_positions(item: &IndexedItem, query_lower: &str) -> Vec<usize> {
+    let query_len = query_lower.chars().count();
+    let text_len = item.text.chars().count();
+    match plain_match_start(item, query_lower) {
+        Some(start) => (start..start + query_len).filter(|&i| i < text_len).collect(),
         None => Vec::new(),
     }
 }

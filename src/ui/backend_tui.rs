@@ -232,15 +232,15 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 .constraints([Constraint::Length(3), Constraint::Min(1)].as_ref())
                 .split(size);
 
-            let mode_label = if app.search_mode() == SearchMode::Migemo && !app.is_migemo_ready() {
-                "Migemo (dict missing)"
-            } else {
-                app.search_mode_label()
+            let mode_label = match app.search_mode() {
+                SearchMode::Migemo if !app.is_migemo_ready() => "Migemo (dict missing)",
+                SearchMode::Combined if !app.is_migemo_ready() => "Fuzzy+Migemo (dict missing)",
+                _ => app.search_mode_label(),
             };
-            let sort_label = if app.search_mode() == SearchMode::Fuzzy {
-                app.sort_mode_label()
-            } else {
-                "Count"
+            let sort_label = match app.search_mode() {
+                SearchMode::Fuzzy => app.sort_mode_label(),
+                SearchMode::Migemo => "Count",
+                SearchMode::Combined => "Fused",
             };
 
             let input_title = format!("Query [{} | {}]", mode_label, sort_label);
@@ -315,9 +315,10 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                 let popup_area = centered_rect(46, 15, size);
                 let text = vec![
                     Line::raw(""),
+                    Line::raw("Ctrl+B : Fuzzy+Migemo合成モード（デフォルト）"),
                     Line::raw("Ctrl+F : Fuzzy検索モード"),
                     Line::raw("Ctrl+T : Migemo検索モード"),
-                    Line::raw("Ctrl+S : ソート切替"),
+                    Line::raw("Ctrl+S : ソート切替（Fuzzyモードのみ）"),
                     Line::raw("Ctrl+P : 選択を上に移動"),
                     Line::raw("Ctrl+N : 選択を下に移動"),
                     Line::raw("Ctrl+D : 選択項目を削除"),
@@ -382,6 +383,12 @@ pub fn run_app(bookmarks: Vec<Entry>) -> Result<(), Box<dyn Error>> {
                     KeyCode::Char('t') => {
                         // Toggle to Migemo mode
                         app.set_search_mode(SearchMode::Migemo);
+                        selected = 0;
+                        continue;
+                    }
+                    KeyCode::Char('b') => {
+                        // Toggle to combined Fuzzy+Migemo mode (the default)
+                        app.set_search_mode(SearchMode::Combined);
                         selected = 0;
                         continue;
                     }

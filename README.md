@@ -48,10 +48,13 @@ The executable will be available at `target/release/bookmark_launcher`.
 
 ### Search modes (TUI)
 
-- `Ctrl+F`: Switch to fuzzy search mode
-- `Ctrl+T`: Switch to migemo search mode
+- `Ctrl+B`: Switch to combined fuzzy + migemo search mode (the default)
+- `Ctrl+F`: Switch to fuzzy-only search mode
+- `Ctrl+T`: Switch to migemo-only search mode
 
-In migemo mode, romaji input can match Japanese text (for example, `puro` can match `プロ`).
+In migemo mode (and the migemo half of combined mode), romaji input can match Japanese text (for example, `puro` can match `プロ`).
+
+The default combined mode includes a bookmark if either the fuzzy or the migemo matcher hits it, then ranks results by a 1:1:1 blend of the fuzzy score, the migemo score, and the access count (each normalized to the same 0–1 scale before summing, so the three signals carry equal weight).
 
 ### Migemo dictionary location
 

@@ -178,6 +178,10 @@ impl AppState {
 pub enum SearchMode {
     Fuzzy,
     Migemo,
+    /// Fuses fuzzy and migemo matching: a bookmark is a candidate if either
+    /// matches, ranked by a normalized 1:1:1 blend of fuzzy score, migemo
+    /// score, and access count (see `App::combined_search`). The default.
+    Combined,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,7 +216,7 @@ impl App {
             query: String::new(),
             state: AppState::new(bookmarks),
             matcher: SkimMatcherV2::default(),
-            search_mode: SearchMode::Fuzzy,
+            search_mode: SearchMode::Combined,
             sort_mode: SortMode::ByScore,
             migemo,
         }
@@ -242,6 +246,7 @@ impl App {
         match self.search_mode {
             SearchMode::Fuzzy => "Fuzzy",
             SearchMode::Migemo => "Migemo",
+            SearchMode::Combined => "Fuzzy+Migemo",
         }
     }
 
@@ -267,6 +272,7 @@ impl App {
         match self.search_mode {
             SearchMode::Fuzzy => self.fuzzy_search(query),
             SearchMode::Migemo => self.migemo_search(query),
+            SearchMode::Combined => self.combined_search(query),
         }
     }
 
@@ -317,12 +323,21 @@ impl App {
         match self.search_mode {
             SearchMode::Fuzzy => self.fuzzy_match_positions(title, query),
             SearchMode::Migemo => self.migemo_match_positions(title, query),
+            SearchMode::Combined => {
+                let mut positions = self.fuzzy_match_positions(title, query);
+                positions.extend(self.migemo_match_positions(title, query));
+                positions.sort_unstable();
+                positions.dedup();
+                positions
+            }
         }
     }
 
     pub fn match_secondary_positions(&self, entry: &Entry, query: &str) -> Vec<usize> {
         match self.search_mode {
-            SearchMode::Fuzzy => self.fuzzy_match_positions(entry.secondary_text(), query),
+            SearchMode::Fuzzy | SearchMode::Combined => {
+                self.fuzzy_match_positions(entry.secondary_text(), query)
+            }
             SearchMode::Migemo => Vec::new(),
         }
     }
@@ -361,6 +376,103 @@ impl App {
 
         results.sort_by(|a, b| {
             bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count())
+        });
+        results
+    }
+
+    /// Fuses fuzzy and migemo matching. A bookmark is included if either
+    /// matcher hits it (OR), then each of the three signals (fuzzy score,
+    /// migemo score, access count) is min-max normalized to 0..=1 across the
+    /// candidate set and summed with equal (1:1:1) weight. Normalizing
+    /// first is what makes "equal weight" meaningful, since the raw signals
+    /// live on unrelated scales (fuzzy_matcher scores, migemo's mora-based
+    /// heuristic score, and a plain access counter).
+    fn combined_search(&self, query: &str) -> Vec<(usize, i64)> {
+        let bookmarks = self.state.bookmarks();
+
+        if query.is_empty() {
+            let mut results: Vec<(usize, i64)> =
+                (0..bookmarks.len()).map(|i| (i, 0)).collect();
+            results.sort_by(|a, b| {
+                bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count())
+            });
+            return results;
+        }
+
+        let fuzzy_raw: Vec<Option<i64>> = bookmarks
+            .iter()
+            .map(|entry| {
+                let title_score = self
+                    .matcher
+                    .fuzzy(entry.title(), query, false)
+                    .map(|(s, _)| s);
+                let secondary_score = self
+                    .matcher
+                    .fuzzy(entry.secondary_text(), query, false)
+                    .map(|(s, _)| s);
+                match (title_score, secondary_score) {
+                    (None, None) => None,
+                    (a, b) => Some(a.unwrap_or(i64::MIN).max(b.unwrap_or(i64::MIN))),
+                }
+            })
+            .collect();
+
+        let mut migemo_raw: Vec<Option<i64>> = vec![None; bookmarks.len()];
+        if let Some(engine) = &self.migemo {
+            for r in engine.search(query) {
+                if let Some(slot) = migemo_raw.get_mut(r.index) {
+                    *slot = Some(r.score);
+                }
+            }
+        }
+
+        let candidate_indices: Vec<usize> = (0..bookmarks.len())
+            .filter(|&i| fuzzy_raw[i].is_some() || migemo_raw[i].is_some())
+            .collect();
+
+        if candidate_indices.is_empty() {
+            return Vec::new();
+        }
+
+        let fuzzy_max = candidate_indices
+            .iter()
+            .filter_map(|&i| fuzzy_raw[i])
+            .map(|s| s.max(0))
+            .max()
+            .unwrap_or(0)
+            .max(1) as f64;
+        let migemo_max = candidate_indices
+            .iter()
+            .filter_map(|&i| migemo_raw[i])
+            .map(|s| s.max(0))
+            .max()
+            .unwrap_or(0)
+            .max(1) as f64;
+        let access_max = candidate_indices
+            .iter()
+            .map(|&i| bookmarks[i].access_count())
+            .max()
+            .unwrap_or(0)
+            .max(1) as f64;
+
+        let mut results: Vec<(usize, i64)> = candidate_indices
+            .iter()
+            .map(|&index| {
+                let fuzzy_norm = fuzzy_raw[index]
+                    .map(|s| s.max(0) as f64 / fuzzy_max)
+                    .unwrap_or(0.0);
+                let migemo_norm = migemo_raw[index]
+                    .map(|s| s.max(0) as f64 / migemo_max)
+                    .unwrap_or(0.0);
+                let access_norm = bookmarks[index].access_count() as f64 / access_max;
+                let combined = fuzzy_norm + migemo_norm + access_norm;
+                (index, (combined * 1_000_000.0).round() as i64)
+            })
+            .collect();
+
+        results.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then(bookmarks[b.0].access_count().cmp(&bookmarks[a.0].access_count()))
         });
         results
     }
@@ -509,6 +621,66 @@ mod tests {
         assert!(
             !results.is_empty(),
             "Expected 'jin' to hit '人事' (reading じんじ), got: {:?}",
+            results
+        );
+    }
+
+    #[test]
+    fn combined_is_the_default_search_mode() {
+        let app = App::new(vec![]);
+        assert_eq!(app.search_mode(), SearchMode::Combined);
+    }
+
+    #[test]
+    fn combined_mode_surfaces_migemo_only_hits() {
+        // "gen" (latin) shares no characters with "言" (kanji), so fuzzy alone
+        // can never match this pair; only migemo's romaji-mora reading match
+        // can. Combined mode must still surface it via the migemo signal.
+        let app = App::new(vec![bookmark("言")]);
+        assert!(app.is_migemo_ready());
+        assert_eq!(app.search_mode(), SearchMode::Combined);
+
+        let results = app.search("gen");
+        assert!(
+            !results.is_empty(),
+            "Expected combined mode to surface the migemo-only hit, got: {:?}",
+            results
+        );
+    }
+
+    #[test]
+    fn combined_mode_surfaces_fuzzy_only_hits() {
+        // "Fbr" is a non-contiguous subsequence of "Foobar" (fuzzy matches
+        // it), but not a contiguous substring or a decodable romaji-mora
+        // query, so migemo alone won't match it. Combined mode must still
+        // surface it via the fuzzy signal.
+        let app = App::new(vec![bookmark("Foobar")]);
+        assert!(app.migemo_search("Fbr").is_empty());
+        assert!(!app.fuzzy_search("Fbr").is_empty());
+
+        let results = app.search("Fbr");
+        assert!(
+            !results.is_empty(),
+            "Expected combined mode to surface the fuzzy-only hit, got: {:?}",
+            results
+        );
+    }
+
+    #[test]
+    fn combined_mode_breaks_ties_by_access_count() {
+        let mut low = bookmark("Test");
+        let mut high = bookmark("Test");
+        *low.access_count_mut() = 1;
+        *high.access_count_mut() = 100;
+        // Put the low-count entry first so a naive "first match wins" bug
+        // wouldn't be caught by index order alone.
+        let app = App::new(vec![low, high]);
+
+        let results = app.search("Test");
+        assert_eq!(
+            results.first().map(|(idx, _)| *idx),
+            Some(1),
+            "Expected the higher access_count entry (index 1) to rank first, got: {:?}",
             results
         );
     }
