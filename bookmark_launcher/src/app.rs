@@ -1,7 +1,7 @@
-use crate::migemo::{MigemoSearcher, SkkDictionary};
 use directories::ProjectDirs;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use migemo_core::{MigemoSearcher, SkkDictionary};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
