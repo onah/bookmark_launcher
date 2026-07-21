@@ -14,6 +14,19 @@
 #      stock `_cd`.
 #   3. Make sure the migemo-complete binary is on $PATH, or set
 #      MIGEMO_COMPLETE_BIN to its absolute path.
+#   4. Recommended: add `unsetopt LIST_AMBIGUOUS` to your .zshrc. A migemo
+#      hit routinely shares no literal prefix with what you typed (romaji
+#      "te" vs. a katakana filename, or a plain-ASCII name sitting right
+#      next to one), and zsh's default LIST_AMBIGUOUS then withholds the
+#      candidate list on the first Tab in exactly that case -- it looks
+#      like completion silently found nothing until a second Tab press.
+#      This can only be changed shell-wide (a completion function's own
+#      `setopt` doesn't reach it -- zsh's completion dispatcher wraps every
+#      completion attempt in its own `localoptions`, so changes made from
+#      inside `_migemo_cd` are discarded before this is checked). The only
+#      user-visible side effect elsewhere is that *any* ambiguous Tab
+#      completion lists its candidates immediately instead of only after a
+#      second Tab.
 #
 # Falls back to zsh's normal directory completion (_files -/) if the binary
 # is missing or returns no candidates, so a stale install never breaks `cd`.

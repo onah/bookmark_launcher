@@ -180,6 +180,56 @@ mod tests {
     }
 
     #[test]
+    fn ascii_and_katakana_homophone_files_both_survive_ranking() {
+        // Regression: "test.txt" and "テスト.txt" (katakana, reads "tesuto")
+        // coexisting in the same directory must not make either one vanish
+        // from the ranked results.
+        let entries = vec![
+            Entry {
+                name: "test.txt".into(),
+                is_dir: false,
+            },
+            Entry {
+                name: "テスト.txt".into(),
+                is_dir: false,
+            },
+        ];
+        for query in ["te", "tes", "test"] {
+            let names = rank_candidates(&entries, query, Kind::Any, empty_dict());
+            assert!(
+                names.contains(&"test.txt".to_string()),
+                "query {query:?} dropped test.txt, got {names:?}"
+            );
+            assert!(
+                names.contains(&"テスト.txt".to_string()),
+                "query {query:?} dropped テスト.txt, got {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ascii_and_katakana_homophone_directories_both_survive_ranking() {
+        let entries = vec![
+            Entry {
+                name: "test".into(),
+                is_dir: true,
+            },
+            Entry {
+                name: "テスト".into(),
+                is_dir: true,
+            },
+        ];
+        for query in ["te", "tes", "test"] {
+            let names = rank_candidates(&entries, query, Kind::Dir, empty_dict());
+            assert_eq!(
+                names.len(),
+                2,
+                "query {query:?} should keep both directories, got {names:?}"
+            );
+        }
+    }
+
+    #[test]
     fn format_candidate_appends_separator_for_directories_only() {
         let dir = Entry {
             name: "アプリ".into(),

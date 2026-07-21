@@ -404,4 +404,29 @@ mod tests {
         searcher.add_item("鰯");
         assert!(searcher.search("iwashi").is_empty());
     }
+
+    #[test]
+    fn ascii_and_katakana_homophones_both_stay_matchable() {
+        // "test.txt" (ASCII) and "テスト.txt" (katakana, reads "tesuto")
+        // coexisting must not make either one drop out of the results for
+        // a shared query -- each is matched by an independent code path
+        // (plain substring vs. mora window) and must not interfere with
+        // the other.
+        let mut searcher = MigemoSearcher::new(test_dictionary());
+        searcher.add_item("test.txt");
+        searcher.add_item("テスト.txt");
+
+        for query in ["te", "tes", "test"] {
+            let results = searcher.search(query);
+            let indices: Vec<usize> = results.iter().map(|r| r.index).collect();
+            assert!(
+                indices.contains(&0),
+                "query {query:?} should still match test.txt, got {indices:?}"
+            );
+            assert!(
+                indices.contains(&1),
+                "query {query:?} should still match テスト.txt, got {indices:?}"
+            );
+        }
+    }
 }
