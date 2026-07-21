@@ -1,0 +1,44 @@
+#compdef vim vi less
+#
+# zsh completion adapter for migemo-complete (file/directory arguments).
+#
+# Install:
+#   1. Copy (or symlink) this file into a directory on your $fpath, keeping
+#      the filename "_migemo_files", e.g.:
+#        mkdir -p ~/.zsh/completions
+#        cp _migemo_files ~/.zsh/completions/_migemo_files
+#        fpath=(~/.zsh/completions $fpath)
+#   2. Make sure the fpath line above comes *before*
+#      `autoload -Uz compinit && compinit` in your .zshrc.
+#   3. Make sure the migemo-complete binary is on $PATH, or set
+#      MIGEMO_COMPLETE_BIN to its absolute path.
+#   4. Recommended: add `unsetopt LIST_AMBIGUOUS` to your .zshrc -- see the
+#      `_cd` adapter's install notes for why (a migemo hit routinely shares
+#      no literal prefix with what you typed, which trips that option).
+#
+# Uses --kind any (files and directories, like zsh's own `_files`) so
+# `vim some-dir/<TAB>` can still walk into a directory. Falls back to
+# zsh's normal file completion (_files) if the binary is missing or
+# returns no candidates, so a stale install never breaks these commands.
+
+_migemo_files() {
+    local bin="${MIGEMO_COMPLETE_BIN:-migemo-complete}"
+    if ! command -v -- "$bin" >/dev/null 2>&1; then
+        _files
+        return
+    fi
+
+    local cur="${words[CURRENT]}"
+    local -a candidates
+    candidates=("${(@f)$("$bin" --cwd "$PWD" --kind any -- "$cur" 2>/dev/null)}")
+
+    if (( ${#candidates} == 0 )); then
+        _files
+        return
+    fi
+
+    # See _cd for what -U/-Q/-S '' do; identical reasoning applies here.
+    compadd -U -Q -S '' -a candidates
+}
+
+_migemo_files "$@"
