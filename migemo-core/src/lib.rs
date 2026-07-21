@@ -10,7 +10,7 @@ mod dictionary;
 mod romaji;
 mod searcher;
 
-pub use dictionary::SkkDictionary;
+pub use dictionary::{CompiledDictError, SkkDictionary};
 // SearchResult is part of the public API (see docs/migemo_ja.md section 5)
 // even though current callers only destructure it through inference.
 #[allow(unused_imports)]
