@@ -20,7 +20,7 @@
 
 _migemo_cd() {
     local bin="${MIGEMO_COMPLETE_BIN:-migemo-complete}"
-    if (( ! $+commands[$bin] )) && [[ ! -x "$bin" ]]; then
+    if ! command -v -- "$bin" >/dev/null 2>&1; then
         _files -/
         return
     fi
