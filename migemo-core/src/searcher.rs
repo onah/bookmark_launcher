@@ -285,7 +285,9 @@ fn plain_highlight_positions(item: &IndexedItem, query_lower: &str) -> Vec<usize
     let query_len = query_lower.chars().count();
     let text_len = item.text.chars().count();
     match plain_match_start(item, query_lower) {
-        Some(start) => (start..start + query_len).filter(|&i| i < text_len).collect(),
+        Some(start) => (start..start + query_len)
+            .filter(|&i| i < text_len)
+            .collect(),
         None => Vec::new(),
     }
 }

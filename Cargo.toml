@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["migemo-core", "bookmark_launcher"]
+members = ["migemo-core", "bookmark_launcher", "migemo-complete"]
