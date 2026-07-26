@@ -5,6 +5,9 @@
 // User queries are converted ascii romaji -> mora list at search time (query_to_morae).
 // Both use the same canonical spellings so a Vec<String> equality check finds matches.
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 /// Convert katakana characters to their hiragana equivalents; everything else is untouched.
 pub fn katakana_to_hiragana(s: &str) -> String {
     s.chars()
@@ -94,299 +97,224 @@ fn last_vowel(mora: &str) -> char {
     }
 }
 
+/// One kana (single character or youon digraph) and its canonical romaji
+/// spelling. `aliases` lists other romaji spellings a user might type for
+/// this same mora (Hepburn/Kunrei fluctuations); [`lookup_plain_token`]
+/// normalizes any of them to `canonical`.
+///
+/// This is the single source of truth for kana<->romaji: [`single_mora`],
+/// [`youon_mora`], and [`lookup_plain_token`] all read from [`MORAE`]
+/// instead of keeping three hand-maintained tables in sync.
+///
+/// `じ`/`ぢ` share the canonical spelling "zi" (with "ji" as an alias),
+/// mirroring how `ず`/`づ` already share "zu" — they're homophones in
+/// modern Japanese, so a query should hit either kana. `てぃ`/`でぃ`/`とぅ`
+/// use the extended spellings "thi"/"dhi"/"twu" rather than "ti"/"di"/"tu",
+/// which stay reserved for the `ち`/`ぢ`/`つ` aliases below; this avoids a
+/// token meaning two different morae depending on context.
+struct MoraDef {
+    kana: &'static str,
+    canonical: &'static str,
+    aliases: &'static [&'static str],
+}
+
+const fn m(
+    kana: &'static str,
+    canonical: &'static str,
+    aliases: &'static [&'static str],
+) -> MoraDef {
+    MoraDef {
+        kana,
+        canonical,
+        aliases,
+    }
+}
+
+const MORAE: &[MoraDef] = &[
+    m("あ", "a", &[]),
+    m("い", "i", &[]),
+    m("う", "u", &[]),
+    m("え", "e", &[]),
+    m("お", "o", &[]),
+    m("か", "ka", &[]),
+    m("き", "ki", &[]),
+    m("く", "ku", &[]),
+    m("け", "ke", &[]),
+    m("こ", "ko", &[]),
+    m("さ", "sa", &[]),
+    m("し", "shi", &["si"]),
+    m("す", "su", &[]),
+    m("せ", "se", &[]),
+    m("そ", "so", &[]),
+    m("た", "ta", &[]),
+    m("ち", "chi", &["ti"]),
+    m("つ", "tsu", &["tu"]),
+    m("て", "te", &[]),
+    m("と", "to", &[]),
+    m("な", "na", &[]),
+    m("に", "ni", &[]),
+    m("ぬ", "nu", &[]),
+    m("ね", "ne", &[]),
+    m("の", "no", &[]),
+    m("は", "ha", &[]),
+    m("ひ", "hi", &[]),
+    m("ふ", "fu", &["hu"]),
+    m("へ", "he", &[]),
+    m("ほ", "ho", &[]),
+    m("ま", "ma", &[]),
+    m("み", "mi", &[]),
+    m("む", "mu", &[]),
+    m("め", "me", &[]),
+    m("も", "mo", &[]),
+    m("や", "ya", &[]),
+    m("ゆ", "yu", &[]),
+    m("よ", "yo", &[]),
+    m("ら", "ra", &[]),
+    m("り", "ri", &[]),
+    m("る", "ru", &[]),
+    m("れ", "re", &[]),
+    m("ろ", "ro", &[]),
+    m("わ", "wa", &[]),
+    m("を", "wo", &[]),
+    m("ん", "n", &[]),
+    m("が", "ga", &[]),
+    m("ぎ", "gi", &[]),
+    m("ぐ", "gu", &[]),
+    m("げ", "ge", &[]),
+    m("ご", "go", &[]),
+    m("ざ", "za", &[]),
+    m("じ", "zi", &["ji"]),
+    m("ず", "zu", &[]),
+    m("ぜ", "ze", &[]),
+    m("ぞ", "zo", &[]),
+    m("だ", "da", &[]),
+    m("ぢ", "zi", &["di"]),
+    m("づ", "zu", &[]),
+    m("で", "de", &[]),
+    m("ど", "do", &[]),
+    m("ば", "ba", &[]),
+    m("び", "bi", &[]),
+    m("ぶ", "bu", &[]),
+    m("べ", "be", &[]),
+    m("ぼ", "bo", &[]),
+    m("ぱ", "pa", &[]),
+    m("ぴ", "pi", &[]),
+    m("ぷ", "pu", &[]),
+    m("ぺ", "pe", &[]),
+    m("ぽ", "po", &[]),
+    m("ゔ", "vu", &[]),
+    m("ぁ", "a", &[]),
+    m("ぃ", "i", &[]),
+    m("ぅ", "u", &[]),
+    m("ぇ", "e", &[]),
+    m("ぉ", "o", &[]),
+    m("ゃ", "ya", &[]),
+    m("ゅ", "yu", &[]),
+    m("ょ", "yo", &[]),
+    m("ゎ", "wa", &[]),
+    m("きゃ", "kya", &[]),
+    m("きゅ", "kyu", &[]),
+    m("きょ", "kyo", &[]),
+    m("ぎゃ", "gya", &[]),
+    m("ぎゅ", "gyu", &[]),
+    m("ぎょ", "gyo", &[]),
+    m("しゃ", "sha", &[]),
+    m("しゅ", "shu", &[]),
+    m("しょ", "sho", &[]),
+    m("じゃ", "ja", &[]),
+    m("じゅ", "ju", &[]),
+    m("じょ", "jo", &[]),
+    m("ちゃ", "cha", &[]),
+    m("ちゅ", "chu", &[]),
+    m("ちょ", "cho", &[]),
+    m("ぢゃ", "ja", &[]),
+    m("ぢゅ", "ju", &[]),
+    m("ぢょ", "jo", &[]),
+    m("にゃ", "nya", &[]),
+    m("にゅ", "nyu", &[]),
+    m("にょ", "nyo", &[]),
+    m("ひゃ", "hya", &[]),
+    m("ひゅ", "hyu", &[]),
+    m("ひょ", "hyo", &[]),
+    m("びゃ", "bya", &[]),
+    m("びゅ", "byu", &[]),
+    m("びょ", "byo", &[]),
+    m("ぴゃ", "pya", &[]),
+    m("ぴゅ", "pyu", &[]),
+    m("ぴょ", "pyo", &[]),
+    m("みゃ", "mya", &[]),
+    m("みゅ", "myu", &[]),
+    m("みょ", "myo", &[]),
+    m("りゃ", "rya", &[]),
+    m("りゅ", "ryu", &[]),
+    m("りょ", "ryo", &[]),
+    m("ふぁ", "fa", &[]),
+    m("ふぃ", "fi", &[]),
+    m("ふぇ", "fe", &[]),
+    m("ふぉ", "fo", &[]),
+    m("うぃ", "wi", &[]),
+    m("うぇ", "we", &[]),
+    m("うぉ", "wo", &[]),
+    m("ゔぁ", "va", &[]),
+    m("ゔぃ", "vi", &[]),
+    m("ゔぇ", "ve", &[]),
+    m("ゔぉ", "vo", &[]),
+    m("てぃ", "thi", &[]),
+    m("でぃ", "dhi", &[]),
+    m("とぅ", "twu", &[]),
+    m("どぅ", "du", &[]),
+    m("つぁ", "tsa", &[]),
+    m("つぃ", "tsi", &[]),
+    m("つぇ", "tse", &[]),
+    m("つぉ", "tso", &[]),
+    m("しぇ", "she", &[]),
+    m("じぇ", "je", &[]),
+    m("ちぇ", "che", &[]),
+    m("くぁ", "kwa", &[]),
+    m("くぃ", "kwi", &[]),
+    m("くぇ", "kwe", &[]),
+    m("くぉ", "kwo", &[]),
+];
+
+/// `MORAE` keyed by `kana`, for [`single_mora`] and [`youon_mora`]. Built
+/// once on first use rather than searched linearly on every call:
+/// `hiragana_to_morae` runs per dictionary entry when loading SKK-JISYO.L
+/// (~170k entries), where a linear scan over ~140 morae measurably slowed
+/// down `SkkDictionary::from_bytes` (see `examples/bench_dict_load.rs`).
+static KANA_TO_MORA: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| MORAE.iter().map(|m| (m.kana, m.canonical)).collect());
+
+/// `MORAE` keyed by romaji token (canonical spellings first, then aliases
+/// inserted on top so an alias always wins if it happens to collide with
+/// some other entry's canonical spelling), for [`lookup_plain_token`].
+static TOKEN_TO_MORA: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut map: HashMap<&'static str, &'static str> = HashMap::new();
+    for entry in MORAE {
+        map.entry(entry.canonical).or_insert(entry.canonical);
+    }
+    for entry in MORAE {
+        for alias in entry.aliases {
+            map.insert(alias, entry.canonical);
+        }
+    }
+    map
+});
+
 fn single_mora(c: char) -> Option<&'static str> {
-    Some(match c {
-        'あ' => "a",
-        'い' => "i",
-        'う' => "u",
-        'え' => "e",
-        'お' => "o",
-        'か' => "ka",
-        'き' => "ki",
-        'く' => "ku",
-        'け' => "ke",
-        'こ' => "ko",
-        'さ' => "sa",
-        'し' => "shi",
-        'す' => "su",
-        'せ' => "se",
-        'そ' => "so",
-        'た' => "ta",
-        'ち' => "chi",
-        'つ' => "tsu",
-        'て' => "te",
-        'と' => "to",
-        'な' => "na",
-        'に' => "ni",
-        'ぬ' => "nu",
-        'ね' => "ne",
-        'の' => "no",
-        'は' => "ha",
-        'ひ' => "hi",
-        'ふ' => "fu",
-        'へ' => "he",
-        'ほ' => "ho",
-        'ま' => "ma",
-        'み' => "mi",
-        'む' => "mu",
-        'め' => "me",
-        'も' => "mo",
-        'や' => "ya",
-        'ゆ' => "yu",
-        'よ' => "yo",
-        'ら' => "ra",
-        'り' => "ri",
-        'る' => "ru",
-        'れ' => "re",
-        'ろ' => "ro",
-        'わ' => "wa",
-        'を' => "wo",
-        'ん' => "n",
-        'が' => "ga",
-        'ぎ' => "gi",
-        'ぐ' => "gu",
-        'げ' => "ge",
-        'ご' => "go",
-        'ざ' => "za",
-        'じ' => "ji",
-        'ず' => "zu",
-        'ぜ' => "ze",
-        'ぞ' => "zo",
-        'だ' => "da",
-        'ぢ' => "ji",
-        'づ' => "zu",
-        'で' => "de",
-        'ど' => "do",
-        'ば' => "ba",
-        'び' => "bi",
-        'ぶ' => "bu",
-        'べ' => "be",
-        'ぼ' => "bo",
-        'ぱ' => "pa",
-        'ぴ' => "pi",
-        'ぷ' => "pu",
-        'ぺ' => "pe",
-        'ぽ' => "po",
-        'ゔ' => "vu",
-        'ぁ' => "a",
-        'ぃ' => "i",
-        'ぅ' => "u",
-        'ぇ' => "e",
-        'ぉ' => "o",
-        'ゃ' => "ya",
-        'ゅ' => "yu",
-        'ょ' => "yo",
-        'ゎ' => "wa",
-        _ => return None,
-    })
+    let mut buf = [0u8; 4];
+    let key: &str = c.encode_utf8(&mut buf);
+    KANA_TO_MORA.get(key).copied()
 }
 
 fn youon_mora(combo: &str) -> Option<&'static str> {
-    Some(match combo {
-        "きゃ" => "kya",
-        "きゅ" => "kyu",
-        "きょ" => "kyo",
-        "ぎゃ" => "gya",
-        "ぎゅ" => "gyu",
-        "ぎょ" => "gyo",
-        "しゃ" => "sha",
-        "しゅ" => "shu",
-        "しょ" => "sho",
-        "じゃ" => "ja",
-        "じゅ" => "ju",
-        "じょ" => "jo",
-        "ちゃ" => "cha",
-        "ちゅ" => "chu",
-        "ちょ" => "cho",
-        "ぢゃ" => "ja",
-        "ぢゅ" => "ju",
-        "ぢょ" => "jo",
-        "にゃ" => "nya",
-        "にゅ" => "nyu",
-        "にょ" => "nyo",
-        "ひゃ" => "hya",
-        "ひゅ" => "hyu",
-        "ひょ" => "hyo",
-        "びゃ" => "bya",
-        "びゅ" => "byu",
-        "びょ" => "byo",
-        "ぴゃ" => "pya",
-        "ぴゅ" => "pyu",
-        "ぴょ" => "pyo",
-        "みゃ" => "mya",
-        "みゅ" => "myu",
-        "みょ" => "myo",
-        "りゃ" => "rya",
-        "りゅ" => "ryu",
-        "りょ" => "ryo",
-        "ふぁ" => "fa",
-        "ふぃ" => "fi",
-        "ふぇ" => "fe",
-        "ふぉ" => "fo",
-        "うぃ" => "wi",
-        "うぇ" => "we",
-        "うぉ" => "wo",
-        "ゔぁ" => "va",
-        "ゔぃ" => "vi",
-        "ゔぇ" => "ve",
-        "ゔぉ" => "vo",
-        "てぃ" => "ti",
-        "でぃ" => "di",
-        "とぅ" => "tu",
-        "どぅ" => "du",
-        "つぁ" => "tsa",
-        "つぃ" => "tsi",
-        "つぇ" => "tse",
-        "つぉ" => "tso",
-        "しぇ" => "she",
-        "じぇ" => "je",
-        "ちぇ" => "che",
-        "くぁ" => "kwa",
-        "くぃ" => "kwi",
-        "くぇ" => "kwe",
-        "くぉ" => "kwo",
-        _ => return None,
-    })
+    KANA_TO_MORA.get(combo).copied()
 }
 
 /// Look up a plain (non-doubled) romaji token, normalizing common spelling
 /// fluctuations (si -> shi, ti -> chi, ...) to the canonical mora used by
 /// [`hiragana_to_morae`].
 fn lookup_plain_token(s: &str) -> Option<&'static str> {
-    Some(match s {
-        "a" => "a",
-        "i" => "i",
-        "u" => "u",
-        "e" => "e",
-        "o" => "o",
-        "n" => "n",
-        "ka" => "ka",
-        "ki" => "ki",
-        "ku" => "ku",
-        "ke" => "ke",
-        "ko" => "ko",
-        "sa" => "sa",
-        "shi" => "shi",
-        "si" => "shi",
-        "su" => "su",
-        "se" => "se",
-        "so" => "so",
-        "ta" => "ta",
-        "chi" => "chi",
-        "ti" => "chi",
-        "tsu" => "tsu",
-        "tu" => "tsu",
-        "te" => "te",
-        "to" => "to",
-        "na" => "na",
-        "ni" => "ni",
-        "nu" => "nu",
-        "ne" => "ne",
-        "no" => "no",
-        "ha" => "ha",
-        "hi" => "hi",
-        "fu" => "fu",
-        "hu" => "fu",
-        "he" => "he",
-        "ho" => "ho",
-        "ma" => "ma",
-        "mi" => "mi",
-        "mu" => "mu",
-        "me" => "me",
-        "mo" => "mo",
-        "ya" => "ya",
-        "yu" => "yu",
-        "yo" => "yo",
-        "ra" => "ra",
-        "ri" => "ri",
-        "ru" => "ru",
-        "re" => "re",
-        "ro" => "ro",
-        "wa" => "wa",
-        "wo" => "wo",
-        "ga" => "ga",
-        "gi" => "gi",
-        "gu" => "gu",
-        "ge" => "ge",
-        "go" => "go",
-        "za" => "za",
-        "ji" => "ji",
-        "zi" => "ji",
-        "zu" => "zu",
-        "ze" => "ze",
-        "zo" => "zo",
-        "da" => "da",
-        "di" => "ji",
-        "de" => "de",
-        "do" => "do",
-        "ba" => "ba",
-        "bi" => "bi",
-        "bu" => "bu",
-        "be" => "be",
-        "bo" => "bo",
-        "pa" => "pa",
-        "pi" => "pi",
-        "pu" => "pu",
-        "pe" => "pe",
-        "po" => "po",
-        "vu" => "vu",
-        "kya" => "kya",
-        "kyu" => "kyu",
-        "kyo" => "kyo",
-        "gya" => "gya",
-        "gyu" => "gyu",
-        "gyo" => "gyo",
-        "sha" => "sha",
-        "shu" => "shu",
-        "sho" => "sho",
-        "ja" => "ja",
-        "ju" => "ju",
-        "jo" => "jo",
-        "cha" => "cha",
-        "chu" => "chu",
-        "cho" => "cho",
-        "nya" => "nya",
-        "nyu" => "nyu",
-        "nyo" => "nyo",
-        "hya" => "hya",
-        "hyu" => "hyu",
-        "hyo" => "hyo",
-        "bya" => "bya",
-        "byu" => "byu",
-        "byo" => "byo",
-        "pya" => "pya",
-        "pyu" => "pyu",
-        "pyo" => "pyo",
-        "mya" => "mya",
-        "myu" => "myu",
-        "myo" => "myo",
-        "rya" => "rya",
-        "ryu" => "ryu",
-        "ryo" => "ryo",
-        "fa" => "fa",
-        "fi" => "fi",
-        "fe" => "fe",
-        "fo" => "fo",
-        "wi" => "wi",
-        "we" => "we",
-        "va" => "va",
-        "vi" => "vi",
-        "ve" => "ve",
-        "vo" => "vo",
-        "du" => "du",
-        "tsa" => "tsa",
-        "tsi" => "tsi",
-        "tse" => "tse",
-        "tso" => "tso",
-        "she" => "she",
-        "je" => "je",
-        "che" => "che",
-        "kwa" => "kwa",
-        "kwi" => "kwi",
-        "kwe" => "kwe",
-        "kwo" => "kwo",
-        _ => return None,
-    })
+    TOKEN_TO_MORA.get(s).copied()
 }
 
 /// Try to match one mora token at `chars[pos..]`, either a plain token (up to 4
@@ -493,5 +421,32 @@ mod tests {
     #[test]
     fn query_kanri() {
         assert_eq!(query_to_morae("kanri"), vec!["ka", "n", "ri"]);
+    }
+
+    #[test]
+    fn ji_and_zi_are_homophones_of_di() {
+        // じ/ぢ share the canonical spelling "zi" (like ず/づ share "zu"),
+        // so "ji" (alias of じ) and "di" (alias of ぢ) both normalize to it.
+        assert_eq!(query_to_morae("ji"), vec!["zi"]);
+        assert_eq!(query_to_morae("zi"), vec!["zi"]);
+        assert_eq!(query_to_morae("di"), vec!["zi"]);
+        assert_eq!(hiragana_to_morae("じ"), vec!["zi"]);
+        assert_eq!(hiragana_to_morae("ぢ"), vec!["zi"]);
+    }
+
+    #[test]
+    fn extended_spellings_reach_thi_dhi_twu_without_shadowing_ti_di_tu() {
+        // てぃ/でぃ/とぅ use "thi"/"dhi"/"twu" precisely so these tokens don't
+        // collide with the "ti"/"di"/"tu" aliases of ち/ぢ/つ below.
+        assert_eq!(hiragana_to_morae("てぃ"), vec!["thi"]);
+        assert_eq!(hiragana_to_morae("でぃ"), vec!["dhi"]);
+        assert_eq!(hiragana_to_morae("とぅ"), vec!["twu"]);
+        assert_eq!(query_to_morae("thi"), vec!["thi"]);
+        assert_eq!(query_to_morae("dhi"), vec!["dhi"]);
+        assert_eq!(query_to_morae("twu"), vec!["twu"]);
+
+        assert_eq!(query_to_morae("ti"), vec!["chi"]);
+        assert_eq!(query_to_morae("di"), vec!["zi"]);
+        assert_eq!(query_to_morae("tu"), vec!["tsu"]);
     }
 }

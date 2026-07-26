@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn jin_hits_jinji_as_a_prefix_of_its_reading() {
-        // 人事 reads "jinji" (morae ["ji","n","ji"]); "jin" -> ["ji","n"] is a
+        // 人事 reads "jinji" (morae ["zi","n","zi"]); "jin" -> ["zi","n"] is a
         // genuine contiguous prefix of that mora list, so it should match —
         // this is the same class of multi-mora match this design adds for
         // "gen" -> 言, just landing on a prefix instead of a whole word.

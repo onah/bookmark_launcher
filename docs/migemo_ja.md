@@ -288,7 +288,7 @@ Hepburn 式を基準とし、以下を正規形とする。
 **表記ゆれ正規化テーブル（クエリ側のみ）:**
 
 ```
-si→shi, ti→chi, tu→tsu, hu→fu, zi→ji, di→ji
+si→shi, ti→chi, tu→tsu, hu→fu, ji→zi, di→zi
 ```
 
 **不完全モーラの扱い（v1）:**
