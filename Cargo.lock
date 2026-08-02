@@ -875,6 +875,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "migemo-fzf"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "encoding_rs",
+ "migemo-core",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
