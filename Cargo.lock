@@ -80,7 +80,6 @@ dependencies = [
 name = "migemo-complete"
 version = "0.1.0"
 dependencies = [
- "directories",
  "encoding_rs",
  "migemo-core",
 ]
@@ -89,6 +88,7 @@ dependencies = [
 name = "migemo-core"
 version = "0.1.0"
 dependencies = [
+ "directories",
  "encoding_rs",
  "fst",
 ]
@@ -97,7 +97,6 @@ dependencies = [
 name = "migemo-fzf"
 version = "0.1.0"
 dependencies = [
- "directories",
  "encoding_rs",
  "migemo-core",
 ]
