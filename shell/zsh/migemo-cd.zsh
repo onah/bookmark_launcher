@@ -18,7 +18,7 @@
 migemo-cd() {
     local bin="${MIGEMO_FZF_BIN:-migemo-fzf}"
     if ! command -v -- "$bin" >/dev/null 2>&1; then
-        echo "migemo-cd: $bin not found on \$PATH (see migemo-fzf/shell/migemo-cd.zsh)" >&2
+        echo "migemo-cd: $bin not found on \$PATH (see shell/zsh/migemo-cd.zsh)" >&2
         return 1
     fi
     if ! command -v -- fzf >/dev/null 2>&1; then

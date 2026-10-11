@@ -11,11 +11,14 @@ fzf. For example, typing `keihi` finds a directory named `経費精算`.
 
 ## Workspace
 
+Crates live under `crates/`; shell integration scripts live under
+`shell/{powershell,zsh,fish}/`.
+
 - `migemo-core`: library that indexes text into romaji morae and matches
   romaji queries against it (design: `docs/migemo_ja.md`)
 - `migemo-fzf`: stdin -> stdout filter driven by fzf's `reload` hook
 - `migemo-complete`: shell completion helper (zsh / fish / PowerShell
-  adapters in `migemo-complete/shell/`)
+  adapters in `shell/`)
 
 ## Dictionary
 
@@ -31,7 +34,7 @@ use. The dictionary can be downloaded from
 
 ## migemo-fzf: fuzzy directory jump
 
-`migemo-fzf` (a separate binary in this workspace) is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `migemo-fzf/shell/migemo-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
+`migemo-fzf` (a separate binary in this workspace) is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `shell/zsh/migemo-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
 
 ### Setup
 
@@ -43,13 +46,13 @@ use. The dictionary can be downloaded from
 
    **zsh** -- source `migemo-cd.zsh` from `.zshrc` and bind it to a key, e.g. to reuse fzf's own Alt+C slot (source this *after* fzf's shell integration so this binding wins):
    ```sh
-   source /path/to/bookmark_launcher/migemo-fzf/shell/migemo-cd.zsh
+   source /path/to/bookmark_launcher/shell/zsh/migemo-cd.zsh
    bindkey '\ec' migemo-cd-widget
    ```
 
    **PowerShell** -- dot-source `migemo-cd.ps1` from `$PROFILE`, then optionally bind it with PSReadLine:
    ```powershell
-   . /path/to/bookmark_launcher/migemo-fzf/shell/migemo-cd.ps1
+   . /path/to/bookmark_launcher/shell/powershell/migemo-cd.ps1
 
    Set-PSReadLineKeyHandler -Chord 'Alt+c' -ScriptBlock {
        [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()

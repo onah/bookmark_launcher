@@ -8,9 +8,9 @@
 use std::time::Instant;
 
 fn main() {
-    let path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../tmp/SKK-JISYO.L").to_string());
+    let path = std::env::args().nth(1).unwrap_or_else(|| {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp/SKK-JISYO.L").to_string()
+    });
 
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
     println!("dictionary file: {path} ({} bytes)", bytes.len());

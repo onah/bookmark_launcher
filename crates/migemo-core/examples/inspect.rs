@@ -12,7 +12,7 @@
 use migemo_core::{MigemoSearcher, SkkDictionary, query_to_morae};
 use std::time::Instant;
 
-const DEFAULT_DICT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../tmp/SKK-JISYO.L");
+const DEFAULT_DICT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp/SKK-JISYO.L");
 
 struct Args {
     dict_path: String,

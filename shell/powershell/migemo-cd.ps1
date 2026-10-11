@@ -50,7 +50,7 @@ function Invoke-MigemoCd {
     $migemoFzfBin = if ($env:MIGEMO_FZF_BIN) { $env:MIGEMO_FZF_BIN } else { 'migemo-fzf' }
 
     if (-not (Get-Command $migemoFzfBin -ErrorAction SilentlyContinue)) {
-        Write-Error "migemo-cd: $migemoFzfBin not found on `$env:PATH (see migemo-fzf/shell/migemo-cd.ps1)"
+        Write-Error "migemo-cd: $migemoFzfBin not found on `$env:PATH (see shell/powershell/migemo-cd.ps1)"
         return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {

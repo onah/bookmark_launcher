@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn ranks_by_score_dropping_non_matches() {
         // score_match rewards a longer `total_len` at the same match start
-        // (see migemo-core/src/searcher.rs), so "apple" outranks "app" here;
+        // (see crates/migemo-core/src/searcher.rs), so "apple" outranks "app" here;
         // this test's job is just to confirm "documents" (no match) is gone.
         let lines = vec![
             "documents".to_string(),
