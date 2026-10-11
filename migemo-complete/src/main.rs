@@ -57,7 +57,7 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-/// Same data directory `bookmark_launcher` uses for its dictionary, so a
+/// Same data directory `migemo-fzf` uses for its dictionary, so a
 /// dictionary downloaded for one tool works for both without duplication.
 fn default_dict_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("com", "onah", "bookmark_launcher")

@@ -55,7 +55,7 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-/// Same data directory `bookmark_launcher` and `migemo-complete` use, so a
+/// Same data directory `migemo-complete` uses, so a
 /// dictionary downloaded once works for every tool in this repo.
 fn default_dict_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("com", "onah", "bookmark_launcher")

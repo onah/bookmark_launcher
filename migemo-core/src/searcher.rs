@@ -54,7 +54,7 @@ struct IndexedItem {
 /// A search hit: the index the item was registered at (via `add_item`), the
 /// char positions in its text that should be highlighted, and a relevance
 /// score (higher is better) usable for ranking and for fusing with other
-/// search signals (see `App::combined_search`).
+/// search signals (e.g. a fuzzy matcher's score).
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     pub index: usize,
