@@ -66,6 +66,16 @@ pub struct SearchResult {
     pub score: i64,
 }
 
+/// One piece of an item's indexed reading, as reported by
+/// [`MigemoSearcher::inspect`]: a run of source chars and the morae it
+/// produced. An empty `morae` means the run is not searchable by reading
+/// (e.g. a kanji missing from the dictionary).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadingSegment {
+    pub text: String,
+    pub morae: Vec<String>,
+}
+
 /// The outcome of matching an item against a query: highlight positions plus
 /// a relevance score. Longer matches and matches closer to the start of the
 /// text score higher, mirroring the ordering fuzzy_matcher's `SkimMatcherV2`
@@ -186,6 +196,40 @@ impl MigemoSearcher {
         match_item(&item, &query_morae, &query_lower)
             .map(|outcome| outcome.positions)
             .unwrap_or_default()
+    }
+
+    /// Break `text` down exactly the way `add_item` indexes it, for
+    /// debugging and learning (see `examples/inspect.rs`). The returned
+    /// segments cover all of `text` in order; chars the index skips come
+    /// back as segments with no morae.
+    pub fn inspect(&self, text: &str) -> Vec<ReadingSegment> {
+        let item = self.build_item(text);
+        let chars: Vec<char> = text.chars().collect();
+        let slice = |range: Range<usize>| -> String { chars[range].iter().collect() };
+        let unindexed = |range: Range<usize>| ReadingSegment {
+            text: slice(range),
+            morae: Vec::new(),
+        };
+
+        let mut result = Vec::new();
+        let mut char_pos = 0;
+        let mut mora_pos = 0;
+        for segment in &item.segments {
+            if segment.char_range.start > char_pos {
+                result.push(unindexed(char_pos..segment.char_range.start));
+            }
+            let mora_end = mora_pos + segment.morae_len;
+            result.push(ReadingSegment {
+                text: slice(segment.char_range.clone()),
+                morae: item.morae[mora_pos..mora_end].to_vec(),
+            });
+            char_pos = segment.char_range.end;
+            mora_pos = mora_end;
+        }
+        if char_pos < chars.len() {
+            result.push(unindexed(char_pos..chars.len()));
+        }
+        result
     }
 
     /// Drop the item registered at `index`, shifting later indices down by
@@ -312,6 +356,34 @@ mod tests {
 けんきゅう /研究/
 ";
         SkkDictionary::from_bytes(&encode_euc_jp(text))
+    }
+
+    fn segment(text: &str, morae: &[&str]) -> ReadingSegment {
+        ReadingSegment {
+            text: text.to_string(),
+            morae: morae.iter().map(|m| m.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn inspect_pairs_each_source_run_with_its_morae() {
+        let searcher = MigemoSearcher::new(test_dictionary());
+        assert_eq!(
+            searcher.inspect("言語か"),
+            vec![segment("言語", &["ge", "n", "go"]), segment("か", &["ka"])]
+        );
+    }
+
+    #[test]
+    fn inspect_reports_unindexed_chars_as_empty_segments() {
+        // 猫 is deliberately absent from `test_dictionary()` (the real
+        // SKK-JISYO.L reads it as ne,ko), standing in for any kanji the
+        // dictionary doesn't know.
+        let searcher = MigemoSearcher::new(test_dictionary());
+        assert_eq!(
+            searcher.inspect("猫管理"),
+            vec![segment("猫", &[]), segment("管理", &["ka", "n", "ri"])]
+        );
     }
 
     #[test]

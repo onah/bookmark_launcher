@@ -14,4 +14,7 @@ pub use dictionary::{CompiledDictError, SkkDictionary};
 // SearchResult is part of the public API (see docs/migemo_ja.md section 5)
 // even though current callers only destructure it through inference.
 #[allow(unused_imports)]
-pub use searcher::{MigemoSearcher, SearchResult};
+pub use searcher::{MigemoSearcher, ReadingSegment, SearchResult};
+// Exposed for inspection (see `examples/inspect.rs`): shows how a typed
+// query is decomposed before matching.
+pub use romaji::query_to_morae;
