@@ -28,13 +28,18 @@ the `KANAQ_BIN` environment variable.
 
 Place `SKK-JISYO.L` (EUC-JP encoded) in the shared data directory:
 
-- macOS: `~/Library/Application Support/com.onah.bookmark_launcher/`
-- Windows: `%APPDATA%\onah\bookmark_launcher\data\`
-- Linux: `~/.local/share/bookmark_launcher/`
+- macOS: `~/Library/Application Support/com.onah.kanaq/`
+- Windows: `%APPDATA%\onah\kanaq\data\`
+- Linux: `~/.local/share/kanaq/`
 
 A compiled cache (`SKK-JISYO.L.compiled`) is created next to it on first
 use. The dictionary can be downloaded from
 `https://github.com/skk-dev/dict/blob/master/SKK-JISYO.L`.
+
+Upgrading from the old layout: the data directory used to be named after
+`bookmark_launcher` (e.g. `~/Library/Application Support/com.onah.bookmark_launcher/`
+on macOS). Move its contents into the directory above; it is not read
+anymore.
 
 ## Directory jump: kanaq filter + fzf
 
@@ -50,13 +55,13 @@ use. The dictionary can be downloaded from
 
    **zsh** -- source `migemo-cd.zsh` from `.zshrc` and bind it to a key, e.g. to reuse fzf's own Alt+C slot (source this *after* fzf's shell integration so this binding wins):
    ```sh
-   source /path/to/bookmark_launcher/shell/zsh/migemo-cd.zsh
+   source /path/to/kanaq/shell/zsh/migemo-cd.zsh
    bindkey '\ec' migemo-cd-widget
    ```
 
    **PowerShell** -- dot-source `migemo-cd.ps1` from `$PROFILE`, then optionally bind it with PSReadLine:
    ```powershell
-   . /path/to/bookmark_launcher/shell/powershell/migemo-cd.ps1
+   . /path/to/kanaq/shell/powershell/migemo-cd.ps1
 
    Set-PSReadLineKeyHandler -Chord 'Alt+c' -ScriptBlock {
        [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()

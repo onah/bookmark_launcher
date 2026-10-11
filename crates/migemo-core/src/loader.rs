@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// `SKK-JISYO.L` in the shared data directory, or `None` if the platform has
 /// no home directory to put it under.
 pub fn default_dictionary_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("com", "onah", "bookmark_launcher")
+    directories::ProjectDirs::from("com", "onah", "kanaq")
         .map(|proj| proj.data_dir().join("SKK-JISYO.L"))
 }
 
@@ -106,6 +106,13 @@ mod tests {
         let path = dir.join("SKK-JISYO.L");
         std::fs::write(&path, bytes).expect("write source dictionary");
         path
+    }
+
+    #[test]
+    fn default_dictionary_path_lives_in_the_kanaq_data_dir() {
+        let path = default_dictionary_path().expect("home directory available");
+        assert!(path.ends_with("SKK-JISYO.L"));
+        assert!(path.to_string_lossy().contains("kanaq"));
     }
 
     #[test]
