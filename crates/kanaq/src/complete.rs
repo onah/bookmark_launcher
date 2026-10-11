@@ -1,8 +1,8 @@
-//! Core logic for the `migemo-complete` shell completion helper.
+//! Core logic for `kanaq complete`, the shell completion helper.
 //!
 //! Kept independent of stdin/stdout/filesystem so it can be unit tested
-//! directly; `main.rs` is the thin CLI wrapper that does I/O and calls into
-//! this module.
+//! directly; `commands/complete.rs` is the thin CLI wrapper that does I/O
+//! and calls into this module.
 
 use migemo_core::{MigemoSearcher, SkkDictionary};
 

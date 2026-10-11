@@ -1,8 +1,8 @@
-//! Core logic for the `migemo-fzf` reload filter.
+//! Core logic for `kanaq filter`, the fzf reload filter.
 //!
 //! Kept independent of stdin/stdout/filesystem so it can be unit tested
-//! directly; `main.rs` is the thin CLI wrapper that does I/O and dictionary
-//! loading.
+//! directly; `commands/filter.rs` is the thin CLI wrapper that does I/O and
+//! dictionary loading.
 
 use migemo_core::{MigemoSearcher, SkkDictionary};
 use std::collections::HashSet;

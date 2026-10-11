@@ -1,13 +1,13 @@
-//! CLI entry point: parses arguments, reads the filesystem and dictionary,
+//! `kanaq complete`: parses arguments, reads the filesystem and dictionary,
 //! and prints ranked completion candidates, one per line.
 //!
-//! Contract: `migemo-complete --cwd <path> [--kind dir|file|any] [--limit N]
+//! Contract: `kanaq complete --cwd <path> [--kind dir|file|any] [--limit N]
 //! [--dict <path>] -- <token>`. Always exits 0 with zero or more candidate
 //! lines on stdout; problems (bad args, unreadable directory) go to stderr
 //! so a shell driving this on every keystroke never sees a hung or crashed
 //! completion.
 
-use migemo_complete::{Entry, Kind, format_candidate, rank_candidates, split_token};
+use kanaq::complete::{Entry, Kind, format_candidate, rank_candidates, split_token};
 use migemo_core::load_dictionary;
 use std::path::{Path, PathBuf};
 
@@ -21,14 +21,13 @@ struct Args {
     token: String,
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut cwd = None;
     let mut kind = Kind::Any;
     let mut limit = DEFAULT_LIMIT;
     let mut dict_path = None;
     let mut token = None;
 
-    let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--cwd" => cwd = Some(PathBuf::from(args.next().ok_or("--cwd requires a value")?)),
@@ -73,14 +72,8 @@ fn list_entries(dir: &Path) -> Vec<Entry> {
         .collect()
 }
 
-fn main() {
-    let args = match parse_args() {
-        Ok(args) => args,
-        Err(message) => {
-            eprintln!("migemo-complete: {message}");
-            std::process::exit(1);
-        }
-    };
+pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
+    let args = parse_args(args)?;
 
     let (dir_prefix, leaf_query) = split_token(&args.token);
     let list_dir = if dir_prefix.is_empty() {
@@ -100,5 +93,32 @@ fn main() {
         if let Some(entry) = entries_by_name.get(name.as_str()) {
             println!("{}", format_candidate(dir_prefix, entry));
         }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Args, String> {
+        parse_args(args.iter().map(|a| a.to_string()))
+    }
+
+    #[test]
+    fn parses_options_and_token() {
+        let args = parse(&[
+            "--cwd", "/tmp", "--kind", "dir", "--limit", "5", "--", "kan",
+        ])
+        .unwrap();
+        assert_eq!(args.cwd, PathBuf::from("/tmp"));
+        assert_eq!(args.kind, Kind::Dir);
+        assert_eq!(args.limit, 5);
+        assert_eq!(args.token, "kan");
+    }
+
+    #[test]
+    fn requires_cwd() {
+        assert!(parse(&["--", "kan"]).is_err());
     }
 }
