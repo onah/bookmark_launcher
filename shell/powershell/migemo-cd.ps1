@@ -3,8 +3,8 @@
 # own Alt+C (fzf-cd-widget); see migemo-cd.zsh for the same thing in zsh.
 #
 # Install:
-#   1. Make sure `fzf` and `migemo-fzf` are on $env:PATH (or set
-#      $env:MIGEMO_FZF_BIN to migemo-fzf's absolute path).
+#   1. Make sure `fzf` and `kanaq` are on $env:PATH (or set
+#      $env:KANAQ_BIN to kanaq's absolute path).
 #   2. Dot-source this file from your $PROFILE:
 #        . /path/to/migemo-cd.ps1
 #   3. Optionally bind it to a key with PSReadLine, e.g. Alt+C:
@@ -47,10 +47,10 @@ function Get-MigemoCdCandidate {
 }
 
 function Invoke-MigemoCd {
-    $migemoFzfBin = if ($env:MIGEMO_FZF_BIN) { $env:MIGEMO_FZF_BIN } else { 'migemo-fzf' }
+    $kanaqBin = if ($env:KANAQ_BIN) { $env:KANAQ_BIN } else { 'kanaq' }
 
-    if (-not (Get-Command $migemoFzfBin -ErrorAction SilentlyContinue)) {
-        Write-Error "migemo-cd: $migemoFzfBin not found on `$env:PATH (see shell/powershell/migemo-cd.ps1)"
+    if (-not (Get-Command $kanaqBin -ErrorAction SilentlyContinue)) {
+        Write-Error "migemo-cd: $kanaqBin not found on `$env:PATH (see shell/powershell/migemo-cd.ps1)"
         return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
@@ -70,10 +70,10 @@ function Invoke-MigemoCd {
     try {
         # Walk the tree once per invocation, not once per keystroke -- fzf's
         # `reload` below just re-ranks this static snapshot through
-        # migemo-fzf, which is what keeps each keystroke fast.
+        # `kanaq filter`, which is what keeps each keystroke fast.
         Get-MigemoCdCandidate -ExcludeDirs $excludeDirs | Set-Content -LiteralPath $tmp.FullName
 
-        $reloadCmd = "change:reload($migemoFzfBin --highlight -- {q} < `"$($tmp.FullName)`")"
+        $reloadCmd = "change:reload($kanaqBin filter --highlight -- {q} < `"$($tmp.FullName)`")"
         $selected = Get-Content -LiteralPath $tmp.FullName |
             fzf --disabled --ansi --height 40% --reverse --prompt 'cd> ' --bind $reloadCmd
     }

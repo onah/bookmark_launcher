@@ -1,6 +1,6 @@
 #compdef vim vi less
 #
-# zsh completion adapter for migemo-complete (file/directory arguments).
+# zsh completion adapter for `kanaq complete` (file/directory arguments).
 #
 # Install:
 #   1. Copy (or symlink) this file into a directory on your $fpath, keeping
@@ -10,8 +10,8 @@
 #        fpath=(~/.zsh/completions $fpath)
 #   2. Make sure the fpath line above comes *before*
 #      `autoload -Uz compinit && compinit` in your .zshrc.
-#   3. Make sure the migemo-complete binary is on $PATH, or set
-#      MIGEMO_COMPLETE_BIN to its absolute path.
+#   3. Make sure the kanaq binary is on $PATH, or set KANAQ_BIN to its
+#      absolute path.
 #   4. Recommended: add `unsetopt LIST_AMBIGUOUS` to your .zshrc -- see the
 #      `_cd` adapter's install notes for why (a migemo hit routinely shares
 #      no literal prefix with what you typed, which trips that option).
@@ -22,7 +22,7 @@
 # returns no candidates, so a stale install never breaks these commands.
 
 _migemo_files() {
-    local bin="${MIGEMO_COMPLETE_BIN:-migemo-complete}"
+    local bin="${KANAQ_BIN:-kanaq}"
     if ! command -v -- "$bin" >/dev/null 2>&1; then
         _files
         return
@@ -30,7 +30,7 @@ _migemo_files() {
 
     local cur="${words[CURRENT]}"
     local -a candidates
-    candidates=("${(@f)$("$bin" --cwd "$PWD" --kind any -- "$cur" 2>/dev/null)}")
+    candidates=("${(@f)$("$bin" complete --cwd "$PWD" --kind any -- "$cur" 2>/dev/null)}")
 
     if (( ${#candidates} == 0 )); then
         _files

@@ -4,8 +4,7 @@ Tools for searching Japanese text with romaji (alphabet) input, built around
 fzf. For example, typing `keihi` finds a directory named `経費精算`.
 
 > Work in progress: this repository is being restructured and renamed to
-> `kanaq` (see `docs/new_function_design_ja.md`). The binaries are still
-> named `migemo-fzf` and `migemo-complete` for now. The former ratatui
+> `kanaq` (see `docs/new_function_design_ja.md`). The former ratatui
 > bookmark launcher has been retired; its last state is kept at the git tag
 > `tui-final`.
 
@@ -16,9 +15,14 @@ Crates live under `crates/`; shell integration scripts live under
 
 - `migemo-core`: library that indexes text into romaji morae and matches
   romaji queries against it (design: `docs/migemo_ja.md`)
-- `migemo-fzf`: stdin -> stdout filter driven by fzf's `reload` hook
-- `migemo-complete`: shell completion helper (zsh / fish / PowerShell
-  adapters in `shell/`)
+- `kanaq`: the command-line tool, with subcommands
+  - `kanaq filter`: stdin -> stdout filter driven by fzf's `reload` hook
+  - `kanaq complete`: shell completion helper (zsh / fish / PowerShell
+    adapters in `shell/`)
+
+Build it with `cargo build --release -p kanaq` and put
+`target/release/kanaq` on `$PATH`, or point the shell scripts at it with
+the `KANAQ_BIN` environment variable.
 
 ## Dictionary
 
@@ -32,15 +36,15 @@ A compiled cache (`SKK-JISYO.L.compiled`) is created next to it on first
 use. The dictionary can be downloaded from
 `https://github.com/skk-dev/dict/blob/master/SKK-JISYO.L`.
 
-## migemo-fzf: fuzzy directory jump
+## Directory jump: kanaq filter + fzf
 
-`migemo-fzf` (a separate binary in this workspace) is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `shell/zsh/migemo-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
+`kanaq filter` is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `shell/zsh/migemo-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
 
 ### Setup
 
 1. Build it and put it on `$PATH`:
    ```bash
-   cargo build --release -p migemo-fzf
+   cargo build --release -p kanaq
    ```
 2. Wire up the widget for your shell:
 
@@ -63,7 +67,7 @@ use. The dictionary can be downloaded from
 
 ### Usage
 
-Press `Alt+C` (or run `migemo-cd` in zsh / `Invoke-MigemoCd` in PowerShell directly) in any directory: fzf opens with every subdirectory listed, and typing romaji or kana filters it live via `migemo-fzf` (e.g. `puro` matches `プロ`). Selecting one `cd`s into it.
+Press `Alt+C` (or run `migemo-cd` in zsh / `Invoke-MigemoCd` in PowerShell directly) in any directory: fzf opens with every subdirectory listed, and typing romaji or kana filters it live via `kanaq filter` (e.g. `puro` matches `プロ`). Selecting one `cd`s into it.
 
 `.git` and `node_modules` are excluded from the listing by default:
 
@@ -78,7 +82,7 @@ Press `Alt+C` (or run `migemo-cd` in zsh / `Invoke-MigemoCd` in PowerShell direc
 
 Either way, an excluded directory is pruned -- never descended into -- not just hidden from the results, so excluding `node_modules` also skips walking everything underneath it.
 
-Under the hood: the directory tree is walked once per invocation into a temp file, and fzf runs with `--disabled` (its own filter off), re-ranking that same snapshot through `migemo-fzf` on every keystroke -- so filtering stays fast even on a large tree, since only the (cheap) ranking step repeats, not the (expensive) tree walk.
+Under the hood: the directory tree is walked once per invocation into a temp file, and fzf runs with `--disabled` (its own filter off), re-ranking that same snapshot through `kanaq filter` on every keystroke -- so filtering stays fast even on a large tree, since only the (cheap) ranking step repeats, not the (expensive) tree walk.
 
 ## Development
 

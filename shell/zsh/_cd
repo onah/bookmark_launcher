@@ -1,6 +1,6 @@
 #compdef cd pushd
 #
-# zsh completion adapter for migemo-complete.
+# zsh completion adapter for `kanaq complete`.
 #
 # Install:
 #   1. Copy (or symlink) this file into a directory on your $fpath, keeping
@@ -12,8 +12,8 @@
 #      `autoload -Uz compinit && compinit` in your .zshrc, and that
 #      ~/.zsh/completions is early in $fpath so it is found ahead of zsh's
 #      stock `_cd`.
-#   3. Make sure the migemo-complete binary is on $PATH, or set
-#      MIGEMO_COMPLETE_BIN to its absolute path.
+#   3. Make sure the kanaq binary is on $PATH, or set KANAQ_BIN to its
+#      absolute path.
 #   4. Recommended: add `unsetopt LIST_AMBIGUOUS` to your .zshrc. A migemo
 #      hit routinely shares no literal prefix with what you typed (romaji
 #      "te" vs. a katakana filename, or a plain-ASCII name sitting right
@@ -32,7 +32,7 @@
 # is missing or returns no candidates, so a stale install never breaks `cd`.
 
 _migemo_cd() {
-    local bin="${MIGEMO_COMPLETE_BIN:-migemo-complete}"
+    local bin="${KANAQ_BIN:-kanaq}"
     if ! command -v -- "$bin" >/dev/null 2>&1; then
         _files -/
         return
@@ -40,7 +40,7 @@ _migemo_cd() {
 
     local cur="${words[CURRENT]}"
     local -a candidates
-    candidates=("${(@f)$("$bin" --cwd "$PWD" --kind dir -- "$cur" 2>/dev/null)}")
+    candidates=("${(@f)$("$bin" complete --cwd "$PWD" --kind dir -- "$cur" 2>/dev/null)}")
 
     if (( ${#candidates} == 0 )); then
         _files -/
@@ -51,7 +51,7 @@ _migemo_cd() {
     #     filtering (a migemo hit like "アプリ" doesn't literally start
     #     with the typed romaji "ap", so the default filter would drop it).
     # -S '': no auto-appended suffix; candidates already carry their own
-    #     trailing "/" for directories (see format_candidate in lib.rs).
+    #     trailing "/" for directories (see format_candidate in crates/kanaq/src/complete.rs).
     compadd -U -Q -S '' -a candidates
 }
 

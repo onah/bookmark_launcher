@@ -49,7 +49,7 @@ const MORA_SEPARATOR: char = ',';
 
 /// Error returned by [`SkkDictionary::from_compiled_bytes`] when the input
 /// isn't a valid compiled dictionary (e.g. a truncated or corrupted cache
-/// file). Callers driving a cache (like `migemo-complete`) should treat this
+/// file). Callers driving a cache (like `kanaq complete`) should treat this
 /// as "rebuild the cache", not a fatal error.
 #[derive(Debug)]
 pub enum CompiledDictError {
