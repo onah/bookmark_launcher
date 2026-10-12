@@ -59,3 +59,66 @@ kanaq/
 3. `crates/` と `shell/` への移動（ファイルの移動のみ）
 4. `migemo-fzf` と `migemo-complete` を `kanaq` のサブコマンドに統合する
 5. 名前の変更（リポジトリ名、データの保存場所の移し替え）
+
+# 進捗（2026-10-12 時点）
+
+上の「決定事項」は決めた当時の記録として残し、実際の状態はこの節にまとめる。
+
+## 完了したこと
+
+- 移行手順 1〜5 はすべて完了
+  - TUI は撤去済み（最終状態はタグ `tui-final`）
+  - リポジトリ名は `onah/kanaq`、データの保存場所は `com.onah.kanaq`
+- `kanaq complete`（シェルの Tab 補完）を zsh の既定の動きに寄せた
+  - 先頭一致を優先し、なければ部分一致
+  - `.` で始まる名前は、入力が `.` で始まるときだけ候補にする
+  - 読みで一致した候補に文字の共通部分がないとき（`te` → `test/` と `テスト/`）に、入力を消さない
+- 検索の規則の改善（詳細は `docs/migemo_ja.md` の 6-4）
+  - 数字と記号は1文字をそのまま読みとして扱う（`202610_te` → `202610_テスト`）
+  - 読めない末尾に母音を含む入力はローマ字とみなさない（`github` が「定義」に一致しない）
+- `kanaq-cd`：引数で検索語を渡せる（`j keihi`）。候補が1件なら fzf を開かずに移動する
+- `kanaq-bm`（ブックマーク）：`list` / `path` / `open` / `add` / `remove` とシェル連携（`bm` / `bme`）
+- 自動テスト：`cargo test` に加え、疑似端末で zsh を動かす `tests/zsh-completion.zsh` と `tests/zsh-bookmarks.zsh`
+
+## 現在の構成
+
+```
+kanaq/
+├── crates/
+│   ├── migemo-core/     ライブラリ: 読み・検索・辞書の読み込みとキャッシュ・データの保存場所
+│   ├── kanaq/           exe: filter / complete（walk は未実装）
+│   └── kanaq-bm/        exe: list / path / open / add / remove
+├── shell/
+│   ├── powershell/      kanaq-cd.ps1 / kanaq-bm.ps1 / cd-completion.ps1（モジュール化は未実施）
+│   ├── zsh/             kanaq-cd.zsh / kanaq-bm.zsh / _cd / _kanaq_files
+│   └── fish/            cd.fish
+├── tests/               zsh-completion.zsh / zsh-bookmarks.zsh
+└── docs/
+```
+
+## kanaq-bm の設計
+
+- 画面と検索は fzf と `kanaq filter` に任せ、`kanaq-bm` はデータの出し入れだけを行う
+- データは `bookmarks.toml`。旧 TUI の形式をそのまま読める
+  - 各項目の `type` 欄は残す（今はブックマークだけに対応。将来ほかの種類を足せるように）
+  - タグは省略可。設定は `add --tag` で行う
+- 編集（名前やタグの変更、並べ替え）は、エディタでファイルを直接開いて行う（`bme`）
+  - `kanaq-bm` による更新は変える値だけを書き換えるので、手書きのコメントや書式は残る
+  - 保存は一時ファイルに書いてから置き換える（途中で止まっても壊れない）
+- `add` で `--title` を省くと、ページのタイトルを取得する
+  - 文字コードはヘッダー → `<meta charset>` → UTF-8 の順に判断する（Shift_JIS のページにも対応）
+  - 取得に失敗したらドメイン名をタイトルにする
+- `open` は既定のブラウザで開き、開いた回数を数える（`list` の並び順に使う）
+  - 環境変数 `KANAQ_BM_OPENER` で開くプログラムを差し替えられる（テストでも使用）
+- HTTP と TLS を含むため、`kanaq` 本体とは別の exe にしている（`kanaq` 約 0.8MB、`kanaq-bm` 約 3.9MB）
+
+# 今後の課題
+
+- **PowerShell 5.1 への対応と Windows 実機での確認**（業務マシンで使う前に必要）
+  - PowerShell のスクリプトは、開発環境（mac）に PowerShell がないため、まだ一度も動かしていない
+  - 5.1 の文字コードの扱い（外部コマンドへのパイプが ASCII、`Set-Content` が CP932）と、`GetRelativePath` がない問題への対応が必要
+  - `shell/powershell/` のスクリプトを1つのモジュール（`.psm1`）にまとめる
+- **`kanaq walk`**（候補の生成と読みの事前作成）：未着手。Windows 実機でキー入力ごとの処理時間を測ってから要否を判断する
+- **あいまい検索（fuzzy）と migemo を組み合わせた採点**
+  - 途中を飛ばした入力（`2026te` で `202610_テスト`）に一致させるため
+  - 子音で終わる短い入力（`test` → `te`）が、関係のない名前にも一致しやすい問題を改善するため
