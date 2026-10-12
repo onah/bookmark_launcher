@@ -3,10 +3,9 @@
 Tools for searching Japanese text with romaji (alphabet) input, built around
 fzf. For example, typing `keihi` finds a directory named `経費精算`.
 
-> Work in progress: this repository is being restructured and renamed to
-> `kanaq` (see `docs/new_function_design_ja.md`). The former ratatui
-> bookmark launcher has been retired; its last state is kept at the git tag
-> `tui-final`.
+Formerly `bookmark_launcher`; the design behind the rename is in
+`docs/new_function_design_ja.md`. The old ratatui bookmark launcher has
+been retired; its last state is kept at the git tag `tui-final`.
 
 ## Workspace
 
@@ -43,7 +42,7 @@ anymore.
 
 ## Directory jump: kanaq filter + fzf
 
-`kanaq filter` is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `shell/zsh/migemo-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
+`kanaq filter` is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `shell/zsh/kanaq-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
 
 ### Setup
 
@@ -53,36 +52,36 @@ anymore.
    ```
 2. Wire up the widget for your shell:
 
-   **zsh** -- source `migemo-cd.zsh` from `.zshrc` and bind it to a key, e.g. to reuse fzf's own Alt+C slot (source this *after* fzf's shell integration so this binding wins):
+   **zsh** -- source `kanaq-cd.zsh` from `.zshrc` and bind it to a key, e.g. to reuse fzf's own Alt+C slot (source this *after* fzf's shell integration so this binding wins):
    ```sh
-   source /path/to/kanaq/shell/zsh/migemo-cd.zsh
-   bindkey '\ec' migemo-cd-widget
+   source /path/to/kanaq/shell/zsh/kanaq-cd.zsh
+   bindkey '\ec' kanaq-cd-widget
    ```
 
-   **PowerShell** -- dot-source `migemo-cd.ps1` from `$PROFILE`, then optionally bind it with PSReadLine:
+   **PowerShell** -- dot-source `kanaq-cd.ps1` from `$PROFILE`, then optionally bind it with PSReadLine:
    ```powershell
-   . /path/to/kanaq/shell/powershell/migemo-cd.ps1
+   . /path/to/kanaq/shell/powershell/kanaq-cd.ps1
 
    Set-PSReadLineKeyHandler -Chord 'Alt+c' -ScriptBlock {
        [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()
-       Invoke-MigemoCd
+       Invoke-KanaqCd
        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
    }
    ```
 
 ### Usage
 
-Press `Alt+C` (or run `migemo-cd` in zsh / `Invoke-MigemoCd` in PowerShell directly) in any directory: fzf opens with every subdirectory listed, and typing romaji or kana filters it live via `kanaq filter` (e.g. `puro` matches `プロ`). Selecting one `cd`s into it.
+Press `Alt+C` (or run `kanaq-cd` in zsh / `Invoke-KanaqCd` in PowerShell directly) in any directory: fzf opens with every subdirectory listed, and typing romaji or kana filters it live via `kanaq filter` (e.g. `puro` matches `プロ`). Selecting one `cd`s into it.
 
 `.git` and `node_modules` are excluded from the listing by default:
 
-- zsh: override with `MIGEMO_CD_FIND_OPTS` (passed to `find` after `.`), e.g. to also exclude `.venv`:
+- zsh: override with `KANAQ_CD_FIND_OPTS` (passed to `find` after `.`), e.g. to also exclude `.venv`:
   ```sh
-  MIGEMO_CD_FIND_OPTS='( -name .git -o -name .venv ) -prune -o -type d -print'
+  KANAQ_CD_FIND_OPTS='( -name .git -o -name .venv ) -prune -o -type d -print'
   ```
-- PowerShell: override with `$env:MIGEMO_CD_EXCLUDE_DIRS` (semicolon-separated directory names), e.g.:
+- PowerShell: override with `$env:KANAQ_CD_EXCLUDE_DIRS` (semicolon-separated directory names), e.g.:
   ```powershell
-  $env:MIGEMO_CD_EXCLUDE_DIRS = '.git;.venv'
+  $env:KANAQ_CD_EXCLUDE_DIRS = '.git;.venv'
   ```
 
 Either way, an excluded directory is pruned -- never descended into -- not just hidden from the results, so excluding `node_modules` also skips walking everything underneath it.

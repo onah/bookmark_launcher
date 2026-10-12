@@ -23,7 +23,7 @@
 #      This can only be changed shell-wide (a completion function's own
 #      `setopt` doesn't reach it -- zsh's completion dispatcher wraps every
 #      completion attempt in its own `localoptions`, so changes made from
-#      inside `_migemo_cd` are discarded before this is checked). The only
+#      inside `_kanaq_cd` are discarded before this is checked). The only
 #      user-visible side effect elsewhere is that *any* ambiguous Tab
 #      completion lists its candidates immediately instead of only after a
 #      second Tab.
@@ -31,7 +31,7 @@
 # Falls back to zsh's normal directory completion (_files -/) if the binary
 # is missing or returns no candidates, so a stale install never breaks `cd`.
 
-_migemo_cd() {
+_kanaq_cd() {
     local bin="${KANAQ_BIN:-kanaq}"
     if ! command -v -- "$bin" >/dev/null 2>&1; then
         _files -/
@@ -55,4 +55,4 @@ _migemo_cd() {
     compadd -U -Q -S '' -a candidates
 }
 
-_migemo_cd "$@"
+_kanaq_cd "$@"

@@ -5,24 +5,24 @@
 #   1. Make sure `fzf` and `kanaq` are on $PATH (or set KANAQ_BIN to
 #      kanaq's absolute path).
 #   2. source this file from your .zshrc:
-#        source /path/to/migemo-cd.zsh
+#        source /path/to/kanaq-cd.zsh
 #   3. Optionally bind it to a key, e.g. to reuse fzf's own Alt+C slot
 #      (source this file *after* fzf's shell integration so this binding
 #      wins):
-#        bindkey '\ec' migemo-cd-widget
+#        bindkey '\ec' kanaq-cd-widget
 #
-# Set MIGEMO_CD_FIND_OPTS to override which directories are listed (default
+# Set KANAQ_CD_FIND_OPTS to override which directories are listed (default
 # excludes .git and node_modules); it's passed to `find` after `.`, e.g.:
-#   MIGEMO_CD_FIND_OPTS='( -name .git -o -name .venv ) -prune -o -type d -print'
+#   KANAQ_CD_FIND_OPTS='( -name .git -o -name .venv ) -prune -o -type d -print'
 
-migemo-cd() {
+kanaq-cd() {
     local bin="${KANAQ_BIN:-kanaq}"
     if ! command -v -- "$bin" >/dev/null 2>&1; then
-        echo "migemo-cd: $bin not found on \$PATH (see shell/zsh/migemo-cd.zsh)" >&2
+        echo "kanaq-cd: $bin not found on \$PATH (see shell/zsh/kanaq-cd.zsh)" >&2
         return 1
     fi
     if ! command -v -- fzf >/dev/null 2>&1; then
-        echo "migemo-cd: fzf not found on \$PATH" >&2
+        echo "kanaq-cd: fzf not found on \$PATH" >&2
         return 1
     fi
 
@@ -33,8 +33,8 @@ migemo-cd() {
     # `reload` below just re-ranks this static snapshot through `kanaq filter`,
     # which is what keeps each keystroke fast.
     local -a find_opts
-    if [[ -n "$MIGEMO_CD_FIND_OPTS" ]]; then
-        find_opts=(${(z)MIGEMO_CD_FIND_OPTS})
+    if [[ -n "$KANAQ_CD_FIND_OPTS" ]]; then
+        find_opts=(${(z)KANAQ_CD_FIND_OPTS})
     else
         find_opts=(\( -name .git -o -name node_modules \) -prune -o -type d -print)
     fi
@@ -51,8 +51,8 @@ migemo-cd() {
     [[ -n "$dir" ]] && cd -- "$dir"
 }
 
-migemo-cd-widget() {
-    migemo-cd
+kanaq-cd-widget() {
+    kanaq-cd
     zle reset-prompt
 }
-zle -N migemo-cd-widget
+zle -N kanaq-cd-widget

@@ -4,9 +4,9 @@
 #
 # Install:
 #   1. Copy (or symlink) this file into a directory on your $fpath, keeping
-#      the filename "_migemo_files", e.g.:
+#      the filename "_kanaq_files", e.g.:
 #        mkdir -p ~/.zsh/completions
-#        cp _migemo_files ~/.zsh/completions/_migemo_files
+#        cp _kanaq_files ~/.zsh/completions/_kanaq_files
 #        fpath=(~/.zsh/completions $fpath)
 #   2. Make sure the fpath line above comes *before*
 #      `autoload -Uz compinit && compinit` in your .zshrc.
@@ -21,7 +21,7 @@
 # zsh's normal file completion (_files) if the binary is missing or
 # returns no candidates, so a stale install never breaks these commands.
 
-_migemo_files() {
+_kanaq_files() {
     local bin="${KANAQ_BIN:-kanaq}"
     if ! command -v -- "$bin" >/dev/null 2>&1; then
         _files
@@ -41,4 +41,4 @@ _migemo_files() {
     compadd -U -Q -S '' -a candidates
 }
 
-_migemo_files "$@"
+_kanaq_files "$@"

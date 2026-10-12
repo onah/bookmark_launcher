@@ -1,26 +1,26 @@
 # PowerShell widget: fuzzy/migemo search directories under the current
 # location and cd into the one you pick. The migemo-aware analog of fzf's
-# own Alt+C (fzf-cd-widget); see migemo-cd.zsh for the same thing in zsh.
+# own Alt+C (fzf-cd-widget); see kanaq-cd.zsh for the same thing in zsh.
 #
 # Install:
 #   1. Make sure `fzf` and `kanaq` are on $env:PATH (or set
 #      $env:KANAQ_BIN to kanaq's absolute path).
 #   2. Dot-source this file from your $PROFILE:
-#        . /path/to/migemo-cd.ps1
+#        . /path/to/kanaq-cd.ps1
 #   3. Optionally bind it to a key with PSReadLine, e.g. Alt+C:
 #        Set-PSReadLineKeyHandler -Chord 'Alt+c' -ScriptBlock {
 #            [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()
-#            Invoke-MigemoCd
+#            Invoke-KanaqCd
 #            [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 #        }
 #
-# Set $env:MIGEMO_CD_EXCLUDE_DIRS to override which directory names are
+# Set $env:KANAQ_CD_EXCLUDE_DIRS to override which directory names are
 # pruned from the walk (semicolon-separated, default ".git;node_modules").
 # A pruned directory is never descended into, same as `find -prune` in the
 # zsh version -- so excluding node_modules also skips walking everything
 # underneath it, not just hiding it from the results.
 
-function Get-MigemoCdCandidate {
+function Get-KanaqCdCandidate {
     param([string[]]$ExcludeDirs)
 
     $root = (Get-Location).ProviderPath
@@ -46,20 +46,20 @@ function Get-MigemoCdCandidate {
     }
 }
 
-function Invoke-MigemoCd {
+function Invoke-KanaqCd {
     $kanaqBin = if ($env:KANAQ_BIN) { $env:KANAQ_BIN } else { 'kanaq' }
 
     if (-not (Get-Command $kanaqBin -ErrorAction SilentlyContinue)) {
-        Write-Error "migemo-cd: $kanaqBin not found on `$env:PATH (see shell/powershell/migemo-cd.ps1)"
+        Write-Error "kanaq-cd: $kanaqBin not found on `$env:PATH (see shell/powershell/kanaq-cd.ps1)"
         return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Error 'migemo-cd: fzf not found on $env:PATH'
+        Write-Error 'kanaq-cd: fzf not found on $env:PATH'
         return
     }
 
-    $excludeDirs = if ($env:MIGEMO_CD_EXCLUDE_DIRS) {
-        $env:MIGEMO_CD_EXCLUDE_DIRS -split ';'
+    $excludeDirs = if ($env:KANAQ_CD_EXCLUDE_DIRS) {
+        $env:KANAQ_CD_EXCLUDE_DIRS -split ';'
     }
     else {
         @('.git', 'node_modules')
@@ -71,7 +71,7 @@ function Invoke-MigemoCd {
         # Walk the tree once per invocation, not once per keystroke -- fzf's
         # `reload` below just re-ranks this static snapshot through
         # `kanaq filter`, which is what keeps each keystroke fast.
-        Get-MigemoCdCandidate -ExcludeDirs $excludeDirs | Set-Content -LiteralPath $tmp.FullName
+        Get-KanaqCdCandidate -ExcludeDirs $excludeDirs | Set-Content -LiteralPath $tmp.FullName
 
         $reloadCmd = "change:reload($kanaqBin filter --highlight -- {q} < `"$($tmp.FullName)`")"
         $selected = Get-Content -LiteralPath $tmp.FullName |
