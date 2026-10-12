@@ -30,7 +30,10 @@ _kanaq_files() {
 
     local cur="${words[CURRENT]}"
     local -a candidates
-    candidates=("${(@f)$("$bin" complete --cwd "$PWD" --kind any -- "$cur" 2>/dev/null)}")
+    # Unquoted (f) drops empty lines, so no output means an empty array (a
+    # quoted "${(@f)...}" would hold one empty string, which compadd -U
+    # would then use to wipe out the word being completed).
+    candidates=(${(f)"$("$bin" complete --cwd "$PWD" --kind any -- "$cur" 2>/dev/null)"})
 
     if (( ${#candidates} == 0 )); then
         _files
