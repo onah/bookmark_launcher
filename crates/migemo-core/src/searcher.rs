@@ -444,6 +444,17 @@ mod tests {
     }
 
     #[test]
+    fn digits_and_symbols_can_lead_a_reading_query() {
+        let mut searcher = MigemoSearcher::new(test_dictionary());
+        searcher.add_item("202610_テスト");
+        searcher.add_item("202610_管理");
+        searcher.add_item("2026-10_管理");
+        assert_eq!(at_start_of(&searcher, "202610_te"), vec![(0, true)]);
+        assert_eq!(at_start_of(&searcher, "202610_kanri"), vec![(1, true)]);
+        assert_eq!(at_start_of(&searcher, "2026-10_ka"), vec![(2, true)]);
+    }
+
+    #[test]
     fn multi_mora_query_hits_kanji() {
         let mut searcher = MigemoSearcher::new(test_dictionary());
         searcher.add_item("言語");

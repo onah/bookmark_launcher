@@ -348,6 +348,10 @@ fn match_token(chars: &[char], pos: usize) -> Option<(usize, String)> {
 /// Decompose a user-typed romaji query into a mora list, stopping (dropping the
 /// rest) as soon as an unrecognized/incomplete fragment is hit. For example
 /// "geng" -> ["ge", "n"], the trailing "g" is dropped rather than guessed at.
+///
+/// Digits and ASCII punctuation are kept as single-char morae instead, the
+/// same way `MigemoSearcher` indexes them in item text, so a query can mix
+/// them with romaji: "202610_te" -> ["2", "0", "2", "6", "1", "0", "_", "te"].
 pub fn query_to_morae(query: &str) -> Vec<String> {
     let chars: Vec<char> = query.to_lowercase().chars().collect();
     let mut morae = Vec::new();
@@ -359,11 +363,23 @@ pub fn query_to_morae(query: &str) -> Vec<String> {
                 morae.push(mora);
                 i += len;
             }
+            None if is_literal_query_char(chars[i]) => {
+                morae.push(chars[i].to_string());
+                i += 1;
+            }
             None => break,
         }
     }
 
     morae
+}
+
+/// Chars that can never start a romaji mora token (every token in [`MORAE`]
+/// is lowercase ASCII letters), so a query takes them literally. `-` is one
+/// of them rather than a long-vowel mark, so names like "2026-10_資料" can be
+/// typed as they read; ー is reachable by repeating the vowel ("raamen").
+fn is_literal_query_char(c: char) -> bool {
+    c.is_ascii_digit() || c.is_ascii_punctuation()
 }
 
 #[cfg(test)]
@@ -416,6 +432,21 @@ mod tests {
     fn query_normalizes_spelling_fluctuation() {
         assert_eq!(query_to_morae("si"), vec!["shi"]);
         assert_eq!(query_to_morae("ti"), vec!["chi"]);
+    }
+
+    #[test]
+    fn query_keeps_digits_and_punctuation_as_literal_morae() {
+        assert_eq!(
+            query_to_morae("202610_te"),
+            vec!["2", "0", "2", "6", "1", "0", "_", "te"]
+        );
+        assert_eq!(query_to_morae("10-ka"), vec!["1", "0", "-", "ka"]);
+    }
+
+    #[test]
+    fn query_still_stops_at_letters_and_spaces_that_are_not_romaji() {
+        assert_eq!(query_to_morae("2kanr"), vec!["2", "ka", "n"]);
+        assert_eq!(query_to_morae("ka n"), vec!["ka"]);
     }
 
     #[test]
