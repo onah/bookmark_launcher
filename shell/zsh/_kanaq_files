@@ -40,8 +40,12 @@ _kanaq_files() {
         return
     fi
 
-    # See _cd for what -U/-Q/-S '' do; identical reasoning applies here.
+    # See _cd for what -U/-Q/-S '' do and why an empty common prefix must
+    # not be inserted; identical reasoning applies here.
     compadd -U -Q -S '' -a candidates
+    if [[ $compstate[insert] == *unambiguous && -z $compstate[unambiguous] ]]; then
+        compstate[insert]=''
+    fi
 }
 
 _kanaq_files "$@"

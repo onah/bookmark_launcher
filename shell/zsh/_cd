@@ -56,6 +56,14 @@ _kanaq_cd() {
     # -S '': no auto-appended suffix; candidates already carry their own
     #     trailing "/" for directories (see format_candidate in crates/kanaq/src/complete.rs).
     compadd -U -Q -S '' -a candidates
+
+    # Candidates found by reading may share no literal prefix at all (e.g.
+    # "te" -> test/ and テスト/). zsh would then insert their common prefix,
+    # the empty string, wiping out the typed word. Leave the line as is
+    # instead; the next Tab lists them and enters menu completion as usual.
+    if [[ $compstate[insert] == *unambiguous && -z $compstate[unambiguous] ]]; then
+        compstate[insert]=''
+    fi
 }
 
 _kanaq_cd "$@"
