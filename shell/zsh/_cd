@@ -57,11 +57,13 @@ _kanaq_cd() {
     #     trailing "/" for directories (see format_candidate in crates/kanaq/src/complete.rs).
     compadd -U -Q -S '' -a candidates
 
-    # Candidates found by reading may share no literal prefix at all (e.g.
-    # "te" -> test/ and テスト/). zsh would then insert their common prefix,
-    # the empty string, wiping out the typed word. Leave the line as is
-    # instead; the next Tab lists them and enters menu completion as usual.
-    if [[ $compstate[insert] == *unambiguous && -z $compstate[unambiguous] ]]; then
+    # Candidates found by reading may share only part of what was typed, or
+    # nothing (e.g. "te" -> test/ and テスト/, or "202610_x" -> 202610_テスト/
+    # and 202610_開発/ once the incomplete "x" is dropped). zsh would then
+    # insert their common prefix, a truncation of the typed word, deleting
+    # what was typed. Leave the line as is instead; the next Tab lists them
+    # and enters menu completion as usual.
+    if [[ $compstate[insert] == *unambiguous && $cur == "$compstate[unambiguous]"?* ]]; then
         compstate[insert]=''
     fi
 }
