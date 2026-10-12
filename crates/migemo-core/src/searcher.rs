@@ -480,6 +480,16 @@ mod tests {
     }
 
     #[test]
+    fn non_romaji_query_does_not_match_a_reading_fragment() {
+        // "github" used to decompose to just ["gi"] and hit the "gi" of
+        // teigi; it should only match as plain text now.
+        let mut searcher = MigemoSearcher::new(test_dictionary());
+        searcher.add_item("\u{30c6}\u{30a4}\u{30ae}"); // katakana "teigi"
+        searcher.add_item("https://github.com/onah");
+        assert_eq!(at_start_of(&searcher, "github"), vec![(1, false)]);
+    }
+
+    #[test]
     fn multi_mora_query_hits_kanji() {
         let mut searcher = MigemoSearcher::new(test_dictionary());
         searcher.add_item("言語");

@@ -345,9 +345,14 @@ fn match_token(chars: &[char], pos: usize) -> Option<(usize, String)> {
     None
 }
 
-/// Decompose a user-typed romaji query into a mora list, stopping (dropping the
-/// rest) as soon as an unrecognized/incomplete fragment is hit. For example
-/// "geng" -> ["ge", "n"], the trailing "g" is dropped rather than guessed at.
+/// Decompose a user-typed romaji query into a mora list.
+///
+/// A trailing fragment that is still being typed, or abbreviated, is dropped
+/// rather than guessed at: "geng" -> ["ge", "n"], and "test" -> ["te"] (so
+/// it still finds the katakana "tesuto"). Whitespace also ends the query there. But a tail
+/// that contains a vowel would have formed a mora if it were romaji, so the
+/// query is not romaji and the result is empty: "github" -> [] rather than
+/// ["gi"], which would match the "gi" of a kanji word read "teigi".
 ///
 /// Digits and ASCII punctuation are kept as single-char morae instead, the
 /// same way `MigemoSearcher` indexes them in item text, so a query can mix
@@ -367,17 +372,25 @@ pub fn query_to_morae(query: &str) -> Vec<String> {
                 morae.push(chars[i].to_string());
                 i += 1;
             }
-            None => break,
+            None if chars[i].is_whitespace() || !contains_vowel(&chars[i..]) => break,
+            None => return Vec::new(),
         }
     }
 
     morae
 }
 
+fn contains_vowel(chars: &[char]) -> bool {
+    chars
+        .iter()
+        .any(|c| matches!(c, 'a' | 'i' | 'u' | 'e' | 'o'))
+}
+
 /// Chars that can never start a romaji mora token (every token in [`MORAE`]
 /// is lowercase ASCII letters), so a query takes them literally. `-` is one
-/// of them rather than a long-vowel mark, so names like "2026-10_資料" can be
-/// typed as they read; ー is reachable by repeating the vowel ("raamen").
+/// of them rather than a long-vowel mark, so names like "2026-10_<kanji>" can be
+/// typed as they read; a long-vowel mark is reachable by repeating the
+/// vowel ("raamen").
 fn is_literal_query_char(c: char) -> bool {
     c.is_ascii_digit() || c.is_ascii_punctuation()
 }
@@ -447,6 +460,20 @@ mod tests {
     fn query_still_stops_at_letters_and_spaces_that_are_not_romaji() {
         assert_eq!(query_to_morae("2kanr"), vec!["2", "ka", "n"]);
         assert_eq!(query_to_morae("ka n"), vec!["ka"]);
+    }
+
+    #[test]
+    fn query_drops_a_trailing_fragment_without_vowels() {
+        assert_eq!(query_to_morae("kanr"), vec!["ka", "n"]);
+        assert_eq!(query_to_morae("toky"), vec!["to"]);
+        assert_eq!(query_to_morae("kakk"), vec!["ka"]);
+        assert_eq!(query_to_morae("test"), vec!["te"]);
+    }
+
+    #[test]
+    fn query_with_a_vowel_in_the_unparsed_tail_has_no_reading() {
+        assert!(query_to_morae("github").is_empty());
+        assert!(query_to_morae(".cla").is_empty());
     }
 
     #[test]
