@@ -4,9 +4,14 @@
 //! `tui-final`), so existing files load unchanged. Each entry carries a
 //! `type` tag; only `"bookmark"` is supported, but the tag is kept so other
 //! kinds of entries can be added later without changing the format.
+//!
+//! The file is also meant to be edited by hand, so updates go through
+//! `toml_edit` and touch only the values they change: comments, ordering,
+//! and formatting written by hand survive.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use toml_edit::DocumentMut;
 
 const FILE_NAME: &str = "bookmarks.toml";
 
@@ -53,6 +58,52 @@ pub fn load(path: &Path) -> Result<BookmarkFile, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BookmarkFile::default()),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
+}
+
+/// Return `text` with the `access_count` of the bookmark whose url is `url`
+/// incremented by one, leaving everything else as written.
+pub fn increment_access_count(text: &str, url: &str) -> Result<String, String> {
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let table = doc
+        .get_mut("bookmarks")
+        .and_then(|item| item.as_array_of_tables_mut())
+        .and_then(|tables| {
+            tables
+                .iter_mut()
+                .find(|t| t.get("url").and_then(|v| v.as_str()) == Some(url))
+        })
+        .ok_or_else(|| format!("no bookmark with url {url}"))?;
+    let count = table
+        .get("access_count")
+        .and_then(|v| v.as_integer())
+        .unwrap_or(0);
+    table["access_count"] = toml_edit::value(count + 1);
+
+    let updated = doc.to_string();
+    // Never hand back something the reader would reject.
+    parse(&updated)?;
+    Ok(updated)
+}
+
+/// Write `contents` to `path` via a temporary file in the same directory and
+/// a rename, so an interrupted write never leaves a truncated file behind.
+pub fn write_atomically(path: &Path, contents: &str) -> Result<(), String> {
+    let describe = |e: std::io::Error| format!("{}: {e}", path.display());
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(describe)?;
+    }
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(format!(".{}.tmp", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+
+    std::fs::write(&tmp, contents)
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            describe(e)
+        })
 }
 
 #[cfg(test)]
@@ -108,6 +159,67 @@ title = "Terminal"
 command = "wt"
 "#;
         assert!(parse(text).is_err());
+    }
+
+    const TWO_BOOKMARKS: &str = r#"# my bookmarks
+[[bookmarks]]
+type = "bookmark"
+title = "A"
+url = "https://a.example"
+access_count = 4
+
+[[bookmarks]]
+type = "bookmark"   # no count yet
+title = "B"
+url = "https://b.example"
+"#;
+
+    fn access_counts(text: &str) -> Vec<u32> {
+        parse(text)
+            .unwrap()
+            .bookmarks
+            .iter()
+            .map(|Entry::Bookmark(b)| b.access_count)
+            .collect()
+    }
+
+    #[test]
+    fn increment_bumps_only_the_matching_bookmark() {
+        let updated = increment_access_count(TWO_BOOKMARKS, "https://a.example").unwrap();
+        assert_eq!(access_counts(&updated), vec![5, 0]);
+    }
+
+    #[test]
+    fn increment_adds_a_missing_count() {
+        let updated = increment_access_count(TWO_BOOKMARKS, "https://b.example").unwrap();
+        assert_eq!(access_counts(&updated), vec![4, 1]);
+    }
+
+    #[test]
+    fn increment_keeps_hand_written_comments() {
+        let updated = increment_access_count(TWO_BOOKMARKS, "https://b.example").unwrap();
+        assert!(updated.starts_with("# my bookmarks\n"));
+        assert!(updated.contains("# no count yet"));
+    }
+
+    #[test]
+    fn increment_rejects_an_unknown_url() {
+        assert!(increment_access_count(TWO_BOOKMARKS, "https://c.example").is_err());
+    }
+
+    #[test]
+    fn write_atomically_replaces_the_file_and_leaves_no_temp_file() {
+        let dir = std::env::temp_dir().join(format!("kanaq-bm-test-{}", std::process::id()));
+        let path = dir.join("bookmarks.toml");
+        write_atomically(&path, "first").unwrap();
+        write_atomically(&path, "second").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec!["bookmarks.toml"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
