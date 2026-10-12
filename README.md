@@ -18,10 +18,13 @@ Crates live under `crates/`; shell integration scripts live under
   - `kanaq filter`: stdin -> stdout filter driven by fzf's `reload` hook
   - `kanaq complete`: shell completion helper (zsh / fish / PowerShell
     adapters in `shell/`)
+- `kanaq-bm`: bookmarks picked with fzf (see [Bookmarks](#bookmarks-kanaq-bm));
+  a separate binary because fetching page titles needs HTTP/TLS
 
-Build it with `cargo build --release -p kanaq` and put
-`target/release/kanaq` on `$PATH`, or point the shell scripts at it with
-the `KANAQ_BIN` environment variable.
+Build them with `cargo build --release -p kanaq -p kanaq-bm` and put
+`target/release/kanaq` and `target/release/kanaq-bm` on `$PATH`, or point
+the shell scripts at them with the `KANAQ_BIN` / `KANAQ_BM_BIN` environment
+variables.
 
 ## Dictionary
 
@@ -147,6 +150,49 @@ Either way, an excluded directory is pruned -- never descended into -- not just 
 
 Under the hood: the directory tree is walked once per invocation into a temp file, and fzf runs with `--disabled` (its own filter off), re-ranking that same snapshot through `kanaq filter` on every keystroke -- so filtering stays fast even on a large tree, since only the (cheap) ranking step repeats, not the (expensive) tree walk.
 
+## Bookmarks: kanaq-bm
+
+Bookmarks live in `bookmarks.toml` in the same data directory as the
+dictionary (`kanaq-bm path` prints its location). Searching and picking
+happen in fzf through `kanaq filter`, so titles, tags, and urls can all be
+searched by romaji (e.g. `kintai` finds a page titled 勤怠...).
+
+```sh
+kanaq-bm add https://example.com/              # title fetched from the page
+kanaq-bm add https://example.com/ --title "Example" --tag work --tag ref
+kanaq-bm remove https://example.com/
+kanaq-bm list                                  # title<TAB>tags<TAB>url, most opened first
+kanaq-bm open https://example.com/             # open in the browser, count the visit
+```
+
+When `--title` is omitted, the page title is fetched; if that fails (offline,
+proxy, ...), the url's host name is used instead. Set `KANAQ_BM_OPENER` to a
+program to open urls with instead of the system default browser.
+
+To edit bookmarks (rename, retag, reorder), edit the file directly: updates
+made by `kanaq-bm` only touch the values they change, so comments and
+formatting you write are kept.
+
+### Shell setup
+
+**zsh** -- source `kanaq-bm.zsh` from `.zshrc` and give it aliases:
+```zsh
+source /path/to/kanaq/shell/zsh/kanaq-bm.zsh
+alias bm=kanaq-bm-pick     # bm, bm kintai
+alias bme=kanaq-bm-edit    # open bookmarks.toml in $EDITOR
+```
+
+**PowerShell** -- dot-source `kanaq-bm.ps1` from `$PROFILE`:
+```powershell
+. /path/to/kanaq/shell/powershell/kanaq-bm.ps1
+Set-Alias bm Invoke-KanaqBmPick
+Set-Alias bme Invoke-KanaqBmEdit     # $env:EDITOR, or notepad
+```
+
+`bm` opens fzf with every bookmark, most opened first; pick one to open it.
+Like `j`, `bm <query>` starts already filtered and opens the bookmark
+directly when exactly one matches.
+
 ## Development
 
 ```bash
@@ -166,6 +212,14 @@ zsh tests/zsh-completion.zsh
 
 Run it after any change to matching in `migemo-core`, to `kanaq complete`,
 or to `shell/zsh/`.
+
+The zsh bookmark picker has a similar test (a few seconds; its own HOME and
+a recording opener instead of the browser):
+
+```bash
+cargo build --release -p kanaq -p kanaq-bm
+zsh tests/zsh-bookmarks.zsh
+```
 
 To see how `migemo-core` reads a text and decomposes a query:
 
