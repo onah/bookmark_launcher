@@ -49,7 +49,7 @@ The zsh integration is made of four files, each installed differently:
 | `kanaq` (binary) | the tool itself | a directory on `$PATH`, e.g. `~/.local/bin` |
 | `shell/zsh/_cd` | Tab completion for `cd` / `pushd` | a directory on `$fpath` (not `$PATH`) |
 | `shell/zsh/_kanaq_files` | Tab completion for `vim` / `vi` / `less` | a directory on `$fpath` |
-| `shell/zsh/kanaq-cd.zsh` | Alt+C directory jump widget (needs fzf) | anywhere; `source`d from `.zshrc` |
+| `shell/zsh/kanaq-cd.zsh` | `kanaq-cd` directory jump (needs fzf) | anywhere; `source`d from `.zshrc` |
 
 1. Build and install the binary, and put the dictionary in place (see
    [Dictionary](#dictionary)):
@@ -64,17 +64,18 @@ The zsh integration is made of four files, each installed differently:
    ln -sf /path/to/kanaq/shell/zsh/_cd ~/.zsh/completions/_cd
    ln -sf /path/to/kanaq/shell/zsh/_kanaq_files ~/.zsh/completions/_kanaq_files
    ```
-3. Install fzf (only needed for the Alt+C widget), e.g. `brew install fzf`.
-4. Add this to `.zshrc`. The `fpath` line must come before `compinit`, and
-   the widget must be sourced after fzf's own shell integration (if you use
-   it) so the Alt+C binding wins:
+3. Install fzf (only needed for `kanaq-cd`), e.g. `brew install fzf`.
+4. Add this to `.zshrc`. The `fpath` line must come before `compinit`. If
+   you bind Alt+C, source `kanaq-cd.zsh` after fzf's own shell integration
+   (if you use it) so this binding wins:
    ```zsh
    unsetopt LIST_AMBIGUOUS
    fpath=(~/.zsh/completions $fpath)
    autoload -Uz compinit && compinit
 
    source /path/to/kanaq/shell/zsh/kanaq-cd.zsh
-   bindkey '\ec' kanaq-cd-widget
+   alias j=kanaq-cd                 # run it as a command: j, j keihi
+   # bindkey '\ec' kanaq-cd-widget  # optional: also bind it to Alt+C
    ```
    `unsetopt LIST_AMBIGUOUS` is recommended because a romaji match usually
    shares no literal prefix with what you typed; without it, the first Tab
@@ -85,11 +86,11 @@ The zsh integration is made of four files, each installed differently:
    rm -f ~/.zcompdump*
    exec zsh
    ```
-   Then `cd tesu<Tab>` should offer a directory named `テスト`, and Alt+C
+   Then `cd tesu<Tab>` should offer a directory named `テスト`, and `j`
    should open fzf.
 
-If the binary is not on `$PATH`, set `KANAQ_BIN` to its absolute path. On
-macOS, Alt+C needs the terminal to send Option as Meta (Terminal.app:
+If the binary is not on `$PATH`, set `KANAQ_BIN` to its absolute path. If
+you bind Alt+C on macOS, the terminal must send Option as Meta (Terminal.app:
 Settings > Profiles > Keyboard > "Use Option as Meta key"; iTerm2: Profiles >
 Keys > Left Option key: Esc+).
 
@@ -112,10 +113,12 @@ above.
 
    **zsh** -- see [zsh setup](#zsh-setup).
 
-   **PowerShell** -- dot-source `kanaq-cd.ps1` from `$PROFILE`, then optionally bind it with PSReadLine:
+   **PowerShell** -- dot-source `kanaq-cd.ps1` from `$PROFILE`, then give it an alias and/or bind it with PSReadLine:
    ```powershell
    . /path/to/kanaq/shell/powershell/kanaq-cd.ps1
+   Set-Alias j Invoke-KanaqCd
 
+   # Optional: also bind it to Alt+C
    Set-PSReadLineKeyHandler -Chord 'Alt+c' -ScriptBlock {
        [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()
        Invoke-KanaqCd
@@ -125,7 +128,9 @@ above.
 
 ### Usage
 
-Press `Alt+C` (or run `kanaq-cd` in zsh / `Invoke-KanaqCd` in PowerShell directly) in any directory: fzf opens with every subdirectory listed, and typing romaji or kana filters it live via `kanaq filter` (e.g. `puro` matches `プロ`). Selecting one `cd`s into it.
+Run `j` (the alias for `kanaq-cd` in zsh / `Invoke-KanaqCd` in PowerShell, or the Alt+C binding) in any directory: fzf opens with every subdirectory listed, and typing romaji or kana filters it live via `kanaq filter` (e.g. `puro` matches `プロ`). Selecting one `cd`s into it.
+
+Give it a query to start from, like zoxide's `z foo`: `j keihi` opens fzf already filtered by `keihi`, and if exactly one directory matches, it jumps there directly without opening fzf.
 
 `.git` and `node_modules` are excluded from the listing by default:
 

@@ -6,10 +6,15 @@
 #      kanaq's absolute path).
 #   2. source this file from your .zshrc:
 #        source /path/to/kanaq-cd.zsh
-#   3. Optionally bind it to a key, e.g. to reuse fzf's own Alt+C slot
-#      (source this file *after* fzf's shell integration so this binding
-#      wins):
+#   3. Optionally give it a short alias and/or bind it to a key, e.g. to
+#      reuse fzf's own Alt+C slot (source this file *after* fzf's shell
+#      integration so this binding wins):
+#        alias j=kanaq-cd
 #        bindkey '\ec' kanaq-cd-widget
+#
+# Usage: `kanaq-cd [query...]`. With a query, fzf opens already filtered by
+# it, and if exactly one directory matches, kanaq-cd jumps there without
+# opening fzf at all (like zoxide's `z foo`).
 #
 # Set KANAQ_CD_FIND_OPTS to override which directories are listed (default
 # excludes .git and node_modules); it's passed to `find` after `.`, e.g.:
@@ -40,11 +45,26 @@ kanaq-cd() {
     fi
     find . "${find_opts[@]}" 2>/dev/null | sed -e 's|^\./||' -e '/^\.$/d' > "$tmp"
 
-    local dir
-    dir=$(fzf --disabled --ansi --height 40% --reverse --prompt 'cd> ' \
-        --bind "change:reload($bin filter --highlight -- {q} < $tmp)" \
-        < "$tmp")
-    local ret=$?
+    local query="$*" dir ret=0
+    if [[ -n "$query" ]]; then
+        local -a hits
+        hits=("${(@f)$("$bin" filter -- "$query" < "$tmp")}")
+        # (@f) on empty output still yields one empty element.
+        if (( ${#hits} == 1 )) && [[ -n "${hits[1]}" ]]; then
+            dir="${hits[1]}"
+        fi
+    fi
+
+    if [[ -z "$dir" ]]; then
+        # The initial list is pre-filtered by the query (an empty query
+        # passes every line through); edits to the query re-rank the full
+        # snapshot via `reload`.
+        dir=$("$bin" filter --highlight -- "$query" < "$tmp" |
+            fzf --disabled --ansi --height 40% --reverse --prompt 'cd> ' \
+                --query "$query" \
+                --bind "change:reload($bin filter --highlight -- {q} < $tmp)")
+        ret=$?
+    fi
     rm -f "$tmp"
 
     (( ret != 0 )) && return $ret

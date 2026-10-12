@@ -7,12 +7,18 @@
 #      $env:KANAQ_BIN to kanaq's absolute path).
 #   2. Dot-source this file from your $PROFILE:
 #        . /path/to/kanaq-cd.ps1
-#   3. Optionally bind it to a key with PSReadLine, e.g. Alt+C:
+#   3. Optionally give it a short alias and/or bind it to a key with
+#      PSReadLine, e.g.:
+#        Set-Alias j Invoke-KanaqCd
 #        Set-PSReadLineKeyHandler -Chord 'Alt+c' -ScriptBlock {
 #            [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()
 #            Invoke-KanaqCd
 #            [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 #        }
+#
+# Usage: `Invoke-KanaqCd [query...]`. With a query, fzf opens already
+# filtered by it, and if exactly one directory matches, it jumps there
+# without opening fzf at all (like zoxide's `z foo`).
 #
 # Set $env:KANAQ_CD_EXCLUDE_DIRS to override which directory names are
 # pruned from the walk (semicolon-separated, default ".git;node_modules").
@@ -47,6 +53,9 @@ function Get-KanaqCdCandidate {
 }
 
 function Invoke-KanaqCd {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Query)
+
+    $queryText = $Query -join ' '
     $kanaqBin = if ($env:KANAQ_BIN) { $env:KANAQ_BIN } else { 'kanaq' }
 
     if (-not (Get-Command $kanaqBin -ErrorAction SilentlyContinue)) {
@@ -73,9 +82,29 @@ function Invoke-KanaqCd {
         # `kanaq filter`, which is what keeps each keystroke fast.
         Get-KanaqCdCandidate -ExcludeDirs $excludeDirs | Set-Content -LiteralPath $tmp.FullName
 
-        $reloadCmd = "change:reload($kanaqBin filter --highlight -- {q} < `"$($tmp.FullName)`")"
-        $selected = Get-Content -LiteralPath $tmp.FullName |
-            fzf --disabled --ansi --height 40% --reverse --prompt 'cd> ' --bind $reloadCmd
+        if ($queryText) {
+            $hits = @(Get-Content -LiteralPath $tmp.FullName | & $kanaqBin filter -- $queryText)
+            if ($hits.Count -eq 1) {
+                $selected = $hits[0]
+            }
+        }
+
+        if (-not $selected) {
+            # The initial list is pre-filtered by the query (an empty query
+            # passes every line through); edits to the query re-rank the
+            # full snapshot via `reload`.
+            $reloadCmd = "change:reload($kanaqBin filter --highlight -- {q} < `"$($tmp.FullName)`")"
+            $fzfArgs = @('--disabled', '--ansi', '--height', '40%', '--reverse', '--prompt', 'cd> ', '--bind', $reloadCmd)
+            # Only pass --query when there is one: older PowerShell drops
+            # empty-string arguments to native commands, which would shift
+            # the next argument into --query's value.
+            if ($queryText) {
+                $fzfArgs += @('--query', $queryText)
+            }
+            $selected = Get-Content -LiteralPath $tmp.FullName |
+                & $kanaqBin filter --highlight -- $queryText |
+                fzf @fzfArgs
+        }
     }
     finally {
         Remove-Item -LiteralPath $tmp.FullName -ErrorAction SilentlyContinue
