@@ -155,6 +155,18 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
+The zsh completion adapters have an end-to-end test that drives a real
+interactive zsh through a pty (about 40 seconds; it uses its own throwaway
+HOME and dictionary, so your shell config is not touched):
+
+```bash
+cargo build --release -p kanaq
+zsh tests/zsh-completion.zsh
+```
+
+Run it after any change to matching in `migemo-core`, to `kanaq complete`,
+or to `shell/zsh/`.
+
 To see how `migemo-core` reads a text and decomposes a query:
 
 ```bash
