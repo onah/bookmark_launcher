@@ -11,7 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use toml_edit::DocumentMut;
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 const FILE_NAME: &str = "bookmarks.toml";
 
@@ -63,28 +63,77 @@ pub fn load(path: &Path) -> Result<BookmarkFile, String> {
 /// Return `text` with the `access_count` of the bookmark whose url is `url`
 /// incremented by one, leaving everything else as written.
 pub fn increment_access_count(text: &str, url: &str) -> Result<String, String> {
+    edit(text, |tables| {
+        let index = position(tables, url).ok_or_else(|| format!("no bookmark with url {url}"))?;
+        let table = tables.get_mut(index).expect("index from position");
+        let count = table
+            .get("access_count")
+            .and_then(|v| v.as_integer())
+            .unwrap_or(0);
+        table["access_count"] = toml_edit::value(count + 1);
+        Ok(())
+    })
+}
+
+/// Return `text` with `bookmark` appended, leaving existing entries as
+/// written. A bookmark with the same url is an error.
+pub fn add_bookmark(text: &str, bookmark: &Bookmark) -> Result<String, String> {
+    edit(text, |tables| {
+        if position(tables, &bookmark.url).is_some() {
+            return Err(format!("already bookmarked: {}", bookmark.url));
+        }
+        let mut table = Table::new();
+        table["type"] = toml_edit::value("bookmark");
+        table["title"] = toml_edit::value(&bookmark.title);
+        table["url"] = toml_edit::value(&bookmark.url);
+        if !bookmark.tags.is_empty() {
+            table["tags"] = toml_edit::value(bookmark.tags.iter().collect::<toml_edit::Array>());
+        }
+        table["access_count"] = toml_edit::value(i64::from(bookmark.access_count));
+        if !tables.is_empty() {
+            // Keep a blank line between entries, like the rest of the file.
+            table.decor_mut().set_prefix("\n");
+        }
+        tables.push(table);
+        Ok(())
+    })
+}
+
+/// Return `text` without the bookmark whose url is `url`.
+pub fn remove_bookmark(text: &str, url: &str) -> Result<String, String> {
+    edit(text, |tables| {
+        let index = position(tables, url).ok_or_else(|| format!("no bookmark with url {url}"))?;
+        tables.remove(index);
+        Ok(())
+    })
+}
+
+/// Apply `change` to the `[[bookmarks]]` tables of `text` (created if the
+/// file has none yet) and return the edited text. The result is checked to
+/// still parse, so a bad edit is never handed back to be saved.
+fn edit(
+    text: &str,
+    change: impl FnOnce(&mut ArrayOfTables) -> Result<(), String>,
+) -> Result<String, String> {
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| e.to_string())?;
-    let table = doc
-        .get_mut("bookmarks")
-        .and_then(|item| item.as_array_of_tables_mut())
-        .and_then(|tables| {
-            tables
-                .iter_mut()
-                .find(|t| t.get("url").and_then(|v| v.as_str()) == Some(url))
-        })
-        .ok_or_else(|| format!("no bookmark with url {url}"))?;
-    let count = table
-        .get("access_count")
-        .and_then(|v| v.as_integer())
-        .unwrap_or(0);
-    table["access_count"] = toml_edit::value(count + 1);
+    let tables = doc
+        .entry("bookmarks")
+        .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()))
+        .as_array_of_tables_mut()
+        .ok_or("`bookmarks` must be written as [[bookmarks]] tables")?;
+    change(tables)?;
 
     let updated = doc.to_string();
-    // Never hand back something the reader would reject.
     parse(&updated)?;
     Ok(updated)
+}
+
+fn position(tables: &ArrayOfTables, url: &str) -> Option<usize> {
+    tables
+        .iter()
+        .position(|t| t.get("url").and_then(|v| v.as_str()) == Some(url))
 }
 
 /// Write `contents` to `path` via a temporary file in the same directory and
@@ -205,6 +254,63 @@ url = "https://b.example"
     #[test]
     fn increment_rejects_an_unknown_url() {
         assert!(increment_access_count(TWO_BOOKMARKS, "https://c.example").is_err());
+    }
+
+    fn new_bookmark(url: &str, tags: &[&str]) -> Bookmark {
+        Bookmark {
+            title: "New".into(),
+            url: url.into(),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            access_count: 0,
+        }
+    }
+
+    #[test]
+    fn add_appends_a_bookmark_and_keeps_the_rest() {
+        let updated = add_bookmark(
+            TWO_BOOKMARKS,
+            &new_bookmark("https://c.example", &["work", "ref"]),
+        )
+        .unwrap();
+        assert!(updated.starts_with(TWO_BOOKMARKS));
+        let file = parse(&updated).unwrap();
+        assert_eq!(
+            file.bookmarks.last(),
+            Some(&Entry::Bookmark(new_bookmark(
+                "https://c.example",
+                &["work", "ref"]
+            )))
+        );
+    }
+
+    #[test]
+    fn add_to_an_empty_file_creates_the_list() {
+        let updated = add_bookmark("", &new_bookmark("https://c.example", &[])).unwrap();
+        assert_eq!(parse(&updated).unwrap().bookmarks.len(), 1);
+        assert!(updated.starts_with("[[bookmarks]]"));
+    }
+
+    #[test]
+    fn add_rejects_a_duplicate_url() {
+        assert!(add_bookmark(TWO_BOOKMARKS, &new_bookmark("https://a.example", &[])).is_err());
+    }
+
+    #[test]
+    fn remove_drops_only_the_matching_bookmark() {
+        let updated = remove_bookmark(TWO_BOOKMARKS, "https://a.example").unwrap();
+        let file = parse(&updated).unwrap();
+        let urls: Vec<&str> = file
+            .bookmarks
+            .iter()
+            .map(|Entry::Bookmark(b)| b.url.as_str())
+            .collect();
+        assert_eq!(urls, vec!["https://b.example"]);
+        assert!(updated.contains("# no count yet"));
+    }
+
+    #[test]
+    fn remove_rejects_an_unknown_url() {
+        assert!(remove_bookmark(TWO_BOOKMARKS, "https://c.example").is_err());
     }
 
     #[test]
