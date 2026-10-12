@@ -12,7 +12,7 @@ mod romaji;
 mod searcher;
 
 pub use dictionary::{CompiledDictError, SkkDictionary};
-pub use loader::{default_dictionary_path, load_dictionary};
+pub use loader::{data_dir, default_dictionary_path, load_dictionary};
 // SearchResult is part of the public API (see docs/migemo_ja.md section 5)
 // even though current callers only destructure it through inference.
 #[allow(unused_imports)]

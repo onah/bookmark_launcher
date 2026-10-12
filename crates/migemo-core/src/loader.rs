@@ -7,11 +7,16 @@
 use super::dictionary::SkkDictionary;
 use std::path::{Path, PathBuf};
 
-/// `SKK-JISYO.L` in the shared data directory, or `None` if the platform has
-/// no home directory to put it under.
+/// The data directory shared by every kanaq tool (the dictionary, and
+/// `kanaq-bm`'s bookmarks), or `None` if the platform has no home directory
+/// to put it under.
+pub fn data_dir() -> Option<PathBuf> {
+    directories::ProjectDirs::from("com", "onah", "kanaq").map(|proj| proj.data_dir().to_path_buf())
+}
+
+/// `SKK-JISYO.L` in the shared [`data_dir`].
 pub fn default_dictionary_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("com", "onah", "kanaq")
-        .map(|proj| proj.data_dir().join("SKK-JISYO.L"))
+    data_dir().map(|dir| dir.join("SKK-JISYO.L"))
 }
 
 /// Load the dictionary at `explicit_path`, or at [`default_dictionary_path`]
