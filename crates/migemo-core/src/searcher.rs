@@ -196,7 +196,7 @@ impl MigemoSearcher {
     /// (e.g. from a separately stored list) and just need highlight ranges.
     pub fn highlight(&self, text: &str, query: &str) -> Vec<usize> {
         let item = self.build_item(text);
-        let query_morae = query_to_morae(query);
+        let query_morae = reading_morae(query);
         let query_lower = query.to_lowercase();
         match_item(&item, &query_morae, &query_lower)
             .map(|outcome| outcome.positions)
@@ -250,7 +250,7 @@ impl MigemoSearcher {
     /// failing that, as a plain case-insensitive substring (keeps plain
     /// ASCII search working for latin item text).
     pub fn search(&self, query: &str) -> Vec<SearchResult> {
-        let query_morae = query_to_morae(query);
+        let query_morae = reading_morae(query);
         let query_lower = query.to_lowercase();
 
         self.items
@@ -266,6 +266,19 @@ impl MigemoSearcher {
             })
             .collect()
     }
+}
+
+/// The morae to match `query` by reading, or none when it has no romaji in
+/// it. Digits and punctuation alone carry no reading, and matching them by
+/// reading is looser than the plain-text match on the whole query: ".cla"
+/// decomposes to just ["."] (the incomplete "cla" is dropped), which would
+/// hit every dotfile instead of only ".claude".
+fn reading_morae(query: &str) -> Vec<String> {
+    let morae = query_to_morae(query);
+    let has_romaji = morae
+        .iter()
+        .any(|m| m.starts_with(|c: char| c.is_ascii_alphabetic()));
+    if has_romaji { morae } else { Vec::new() }
 }
 
 /// Match a single already-indexed item against a decomposed query, returning
@@ -452,6 +465,18 @@ mod tests {
         assert_eq!(at_start_of(&searcher, "202610_te"), vec![(0, true)]);
         assert_eq!(at_start_of(&searcher, "202610_kanri"), vec![(1, true)]);
         assert_eq!(at_start_of(&searcher, "2026-10_ka"), vec![(2, true)]);
+    }
+
+    #[test]
+    fn query_without_romaji_matches_only_as_plain_text() {
+        let mut searcher = MigemoSearcher::new(test_dictionary());
+        for item in [".claude", ".cache", ".zshrc", ".zprofile", "202610_テスト"] {
+            searcher.add_item(item);
+        }
+        assert_eq!(at_start_of(&searcher, ".cla"), vec![(0, true)]);
+        assert_eq!(at_start_of(&searcher, ".zsh"), vec![(2, true)]);
+        assert_eq!(at_start_of(&searcher, "202610_x"), vec![]);
+        assert_eq!(at_start_of(&searcher, "2026"), vec![(4, true)]);
     }
 
     #[test]
