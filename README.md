@@ -40,6 +40,64 @@ Upgrading from the old layout: the data directory used to be named after
 on macOS). Move its contents into the directory above; it is not read
 anymore.
 
+## zsh setup
+
+The zsh integration is made of four files, each installed differently:
+
+| File | What it does | Where it goes |
+|---|---|---|
+| `kanaq` (binary) | the tool itself | a directory on `$PATH`, e.g. `~/.local/bin` |
+| `shell/zsh/_cd` | Tab completion for `cd` / `pushd` | a directory on `$fpath` (not `$PATH`) |
+| `shell/zsh/_kanaq_files` | Tab completion for `vim` / `vi` / `less` | a directory on `$fpath` |
+| `shell/zsh/kanaq-cd.zsh` | Alt+C directory jump widget (needs fzf) | anywhere; `source`d from `.zshrc` |
+
+1. Build and install the binary, and put the dictionary in place (see
+   [Dictionary](#dictionary)):
+   ```sh
+   cargo build --release -p kanaq
+   cp target/release/kanaq ~/.local/bin/
+   ```
+2. Link the completion files into a completion directory. Symlinks keep
+   them in sync with the repository:
+   ```sh
+   mkdir -p ~/.zsh/completions
+   ln -sf /path/to/kanaq/shell/zsh/_cd ~/.zsh/completions/_cd
+   ln -sf /path/to/kanaq/shell/zsh/_kanaq_files ~/.zsh/completions/_kanaq_files
+   ```
+3. Install fzf (only needed for the Alt+C widget), e.g. `brew install fzf`.
+4. Add this to `.zshrc`. The `fpath` line must come before `compinit`, and
+   the widget must be sourced after fzf's own shell integration (if you use
+   it) so the Alt+C binding wins:
+   ```zsh
+   unsetopt LIST_AMBIGUOUS
+   fpath=(~/.zsh/completions $fpath)
+   autoload -Uz compinit && compinit
+
+   source /path/to/kanaq/shell/zsh/kanaq-cd.zsh
+   bindkey '\ec' kanaq-cd-widget
+   ```
+   `unsetopt LIST_AMBIGUOUS` is recommended because a romaji match usually
+   shares no literal prefix with what you typed; without it, the first Tab
+   shows nothing (see the comments in `shell/zsh/_cd`).
+5. Restart zsh and try it. If completion still behaves like before, clear
+   the completion cache first:
+   ```sh
+   rm -f ~/.zcompdump*
+   exec zsh
+   ```
+   Then `cd tesu<Tab>` should offer a directory named `テスト`, and Alt+C
+   should open fzf.
+
+If the binary is not on `$PATH`, set `KANAQ_BIN` to its absolute path. On
+macOS, Alt+C needs the terminal to send Option as Meta (Terminal.app:
+Settings > Profiles > Keyboard > "Use Option as Meta key"; iTerm2: Profiles >
+Keys > Left Option key: Esc+).
+
+Upgrading from the migemo-named scripts: remove the old
+`~/.zsh/completions/_migemo_files` and the old `migemo-complete` binary, and
+replace `migemo-cd.zsh` / `migemo-cd-widget` in `.zshrc` with the names
+above.
+
 ## Directory jump: kanaq filter + fzf
 
 `kanaq filter` is a thin stdin -> stdout filter built for fzf's `--bind change:reload(...)` hook: it reads candidate lines from stdin, ranks them against a query with the `migemo-core` matcher, and prints the survivors highest-score-first (optionally ANSI-highlighted). Paired with the zsh widget in `shell/zsh/kanaq-cd.zsh`, it's a migemo-aware replacement for fzf's own Alt+C (`fzf-cd-widget`): search subdirectories under the current directory and `cd` into the one you pick.
@@ -52,11 +110,7 @@ anymore.
    ```
 2. Wire up the widget for your shell:
 
-   **zsh** -- source `kanaq-cd.zsh` from `.zshrc` and bind it to a key, e.g. to reuse fzf's own Alt+C slot (source this *after* fzf's shell integration so this binding wins):
-   ```sh
-   source /path/to/kanaq/shell/zsh/kanaq-cd.zsh
-   bindkey '\ec' kanaq-cd-widget
-   ```
+   **zsh** -- see [zsh setup](#zsh-setup).
 
    **PowerShell** -- dot-source `kanaq-cd.ps1` from `$PROFILE`, then optionally bind it with PSReadLine:
    ```powershell
