@@ -43,20 +43,30 @@ pub fn split_token(token: &str) -> (&str, &str) {
     }
 }
 
-/// Filter `entries` by `kind` and rank them against `leaf_query`.
+/// Filter `entries` by `kind` and rank them against `leaf_query`, following
+/// plain shell completion where it can:
 ///
-/// An empty query (the user has typed nothing past the directory separator
-/// yet) returns every matching entry, alphabetically, matching plain shell
-/// completion behavior. Otherwise ranks by `MigemoSearcher` score,
-/// highest first, breaking ties alphabetically for determinism.
+/// - Hidden entries (names starting with `.`) are offered only when the
+///   query itself starts with `.`.
+/// - An empty query (the user has typed nothing past the directory
+///   separator yet) returns every remaining entry, alphabetically.
+/// - Otherwise only entries whose name matches from its first char are
+///   offered, falling back to matches anywhere in the name when there are
+///   none (like zsh's common `matcher-list '' 'l:|=* r:|=*'`), so
+///   "2024_経費精算" is still reachable with "keihi".
+///
+/// Survivors are ranked by `MigemoSearcher` score, highest first, breaking
+/// ties alphabetically for determinism.
 pub fn rank_candidates(
     entries: &[Entry],
     leaf_query: &str,
     kind: Kind,
     dict: SkkDictionary,
 ) -> Vec<String> {
+    let show_hidden = leaf_query.starts_with('.');
     let filtered: Vec<&Entry> = entries
         .iter()
+        .filter(|e| show_hidden || !e.name.starts_with('.'))
         .filter(|e| match kind {
             Kind::Dir => e.is_dir,
             Kind::File => !e.is_dir,
@@ -76,6 +86,9 @@ pub fn rank_candidates(
     }
 
     let mut results = searcher.search(leaf_query);
+    if results.iter().any(|r| r.at_start) {
+        results.retain(|r| r.at_start);
+    }
     results.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
@@ -161,6 +174,48 @@ mod tests {
         ];
         let names = rank_candidates(&entries, "ap", Kind::Dir, empty_dict());
         assert_eq!(names, vec!["アプリ"]);
+    }
+
+    fn dirs(names: &[&str]) -> Vec<Entry> {
+        names
+            .iter()
+            .map(|name| Entry {
+                name: name.to_string(),
+                is_dir: true,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn prefix_hits_hide_matches_elsewhere_in_the_name() {
+        let entries = dirs(&["keihi-old", "abc-keihi", "ケイヒ"]);
+        let mut names = rank_candidates(&entries, "kei", Kind::Dir, empty_dict());
+        names.sort();
+        assert_eq!(names, vec!["keihi-old", "ケイヒ"]);
+    }
+
+    #[test]
+    fn falls_back_to_matches_anywhere_without_a_prefix_hit() {
+        let entries = dirs(&["2024_ケイヒ", "abc-keihi", "docs"]);
+        let mut names = rank_candidates(&entries, "keihi", Kind::Dir, empty_dict());
+        names.sort();
+        assert_eq!(names, vec!["2024_ケイヒ", "abc-keihi"]);
+    }
+
+    #[test]
+    fn hidden_entries_need_a_leading_dot_in_the_query() {
+        let entries = dirs(&[".git", ".github", "gitlab"]);
+        assert_eq!(
+            rank_candidates(&entries, "", Kind::Dir, empty_dict()),
+            vec!["gitlab"]
+        );
+        assert_eq!(
+            rank_candidates(&entries, "git", Kind::Dir, empty_dict()),
+            vec!["gitlab"]
+        );
+        let mut names = rank_candidates(&entries, ".git", Kind::Dir, empty_dict());
+        names.sort();
+        assert_eq!(names, vec![".git", ".github"]);
     }
 
     #[test]

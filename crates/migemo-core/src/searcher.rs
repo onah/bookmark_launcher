@@ -64,6 +64,10 @@ pub struct SearchResult {
     #[allow(dead_code)]
     pub highlight: Vec<usize>,
     pub score: i64,
+    /// Whether the query also matches starting at the item's first char
+    /// (by reading or as plain text), e.g. "kei" on "経費精算" but not on
+    /// "abc-keihi". Lets callers like shell completion prefer prefix hits.
+    pub at_start: bool,
 }
 
 /// One piece of an item's indexed reading, as reported by
@@ -83,6 +87,7 @@ pub struct ReadingSegment {
 struct MatchOutcome {
     positions: Vec<usize>,
     score: i64,
+    at_start: bool,
 }
 
 fn score_match(matched_len: usize, start: usize, total_len: usize) -> i64 {
@@ -256,6 +261,7 @@ impl MigemoSearcher {
                     index,
                     highlight: outcome.positions,
                     score: outcome.score,
+                    at_start: outcome.at_start,
                 })
             })
             .collect()
@@ -271,11 +277,14 @@ fn match_item(
     query_morae: &[String],
     query_lower: &str,
 ) -> Option<MatchOutcome> {
+    let at_start = matches_at_start(item, query_morae, query_lower);
+
     if let Some(start) = find_mora_window(&item.morae, query_morae) {
         let end = start + query_morae.len();
         return Some(MatchOutcome {
             positions: highlight_positions(item, start, end),
             score: score_match(query_morae.len(), start, item.morae.len()),
+            at_start,
         });
     }
 
@@ -285,10 +294,28 @@ fn match_item(
         return Some(MatchOutcome {
             positions: plain_highlight_positions(item, query_lower),
             score: score_match(query_len, start, item.text.chars().count()),
+            at_start,
         });
     }
 
     None
+}
+
+/// True if the query matches from the item's first char, either by reading
+/// (its morae start the item's morae, and those morae begin at char 0, so a
+/// leading unindexed char like an unknown kanji does not count) or as a
+/// plain case-insensitive prefix. Checked independently of which match
+/// `match_item` reports, since e.g. "keihi_経費" hits "kei" by reading at
+/// 経費 but also as a plain prefix.
+fn matches_at_start(item: &IndexedItem, query_morae: &[String], query_lower: &str) -> bool {
+    let by_reading = !query_morae.is_empty()
+        && item.morae.starts_with(query_morae)
+        && item
+            .segments
+            .first()
+            .is_some_and(|s| s.char_range.start == 0);
+    let as_plain = !query_lower.is_empty() && item.text.to_lowercase().starts_with(query_lower);
+    by_reading || as_plain
 }
 
 fn find_mora_window(item_morae: &[String], query_morae: &[String]) -> Option<usize> {
@@ -384,6 +411,36 @@ mod tests {
             searcher.inspect("猫管理"),
             vec![segment("猫", &[]), segment("管理", &["ka", "n", "ri"])]
         );
+    }
+
+    fn at_start_of(searcher: &MigemoSearcher, query: &str) -> Vec<(usize, bool)> {
+        let mut hits: Vec<(usize, bool)> = searcher
+            .search(query)
+            .iter()
+            .map(|r| (r.index, r.at_start))
+            .collect();
+        hits.sort();
+        hits
+    }
+
+    #[test]
+    fn at_start_distinguishes_prefix_hits_from_inner_hits() {
+        let mut searcher = MigemoSearcher::new(test_dictionary());
+        searcher.add_item("管理表"); // reading starts with kanri
+        searcher.add_item("abc-kanri"); // plain text, inner hit
+        searcher.add_item("新管理"); // 新 is not in the test dictionary
+        searcher.add_item("Kanri-memo"); // plain prefix, any case
+        assert_eq!(
+            at_start_of(&searcher, "kanri"),
+            vec![(0, true), (1, false), (2, false), (3, true)]
+        );
+    }
+
+    #[test]
+    fn at_start_holds_for_a_plain_prefix_even_when_reading_hits_later() {
+        let mut searcher = MigemoSearcher::new(test_dictionary());
+        searcher.add_item("kanri_管理");
+        assert_eq!(at_start_of(&searcher, "kanri"), vec![(0, true)]);
     }
 
     #[test]
